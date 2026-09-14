@@ -1443,6 +1443,18 @@ def admin_campaigns_page():
     )
 
 
+@app.get("/api/admin/subscriptions")
+@role_required("admin")
+def api_admin_subscriptions():
+    return jsonify(_json_safe({"subscriptions": subscription_connector.list_all_subscriptions()}))
+
+
+@app.get("/api/admin/campaigns")
+@role_required("admin")
+def api_admin_campaigns_bootstrap():
+    return jsonify(_json_safe({"campaigns": subscription_connector.list_campaigns(), "plans": subscription_connector.PLANS}))
+
+
 @app.post("/api/admin/campaigns")
 @role_required("admin")
 def api_admin_create_campaign():

@@ -15,6 +15,8 @@ import RequireAuth from "./auth/RequireAuth";
 import RequireAdmin from "./auth/RequireAdmin";
 import AdminLayout from "./components/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
+import AdminCampaigns from "./pages/admin/AdminCampaigns";
 
 export default function App() {
   return (
@@ -58,8 +60,10 @@ export default function App() {
           }
         >
           <Route index element={<AdminDashboard />} />
-          {/* /admin/users, /admin/subscriptions, /admin/campaigns,
-              /admin/scanner-campaign added here as each is ported. */}
+          <Route path="subscriptions" element={<AdminSubscriptions />} />
+          <Route path="campaigns" element={<AdminCampaigns />} />
+          {/* /admin/users, /admin/scanner-campaign added here as each
+              is ported. */}
         </Route>
 
         {/* Remaining marketing/static pages (Education, Pricing, Vision)
