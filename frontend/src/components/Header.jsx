@@ -53,6 +53,11 @@ export default function Header() {
                 Dashboard
               </NavLink>
             )}
+            {user?.role === "admin" && (
+              <NavLink to="/admin" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+                Admin
+              </NavLink>
+            )}
           </nav>
         </div>
         <div className="site-header-right">

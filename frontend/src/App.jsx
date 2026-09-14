@@ -12,6 +12,9 @@ import Dashboard from "./pages/Dashboard";
 import ChartWall from "./pages/ChartWall";
 import Callback from "./auth/Callback";
 import RequireAuth from "./auth/RequireAuth";
+import RequireAdmin from "./auth/RequireAdmin";
+import AdminLayout from "./components/AdminLayout";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 
 export default function App() {
   return (
@@ -45,9 +48,22 @@ export default function App() {
           }
         />
         <Route path="/markets/chart-wall" element={<ChartWall />} />
-        {/* Every other route from the original app (News, Markets/*,
-            Education, Pricing, Dashboard, Admin/*, ...) gets added here
-            page-by-page in later phases of the rewrite plan. */}
+
+        <Route
+          path="/admin"
+          element={
+            <RequireAdmin>
+              <AdminLayout />
+            </RequireAdmin>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+          {/* /admin/users, /admin/subscriptions, /admin/campaigns,
+              /admin/scanner-campaign added here as each is ported. */}
+        </Route>
+
+        {/* Remaining marketing/static pages (Education, Pricing, Vision)
+            get added here in Phase 4 of the rewrite plan. */}
       </Route>
     </Routes>
   );

@@ -1309,6 +1309,29 @@ def admin_dashboard():
     )
 
 
+@app.get("/api/admin/dashboard")
+@role_required("admin")
+def api_admin_dashboard():
+    """Mirrors admin_dashboard()'s exact logic — was only ever inline in
+    that render_template() call before."""
+    users = cognito_connector.list_all_users()
+    stats = subscription_connector.compute_revenue_stats(len(users))
+    admin_count = sum(1 for u in users if u["role"] == "admin")
+
+    recent_users = []
+    for u in users[:6]:
+        u = _user_with_subscription(dict(u))
+        u["created_at"] = u["created_at"].isoformat()
+        recent_users.append(u)
+
+    return jsonify({
+        "stats": stats,
+        "recentUsers": recent_users,
+        "totalUserCount": len(users),
+        "adminCount": admin_count,
+    })
+
+
 @app.route("/admin/users")
 @role_required("admin")
 def admin_users_page():
