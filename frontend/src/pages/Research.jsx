@@ -76,7 +76,8 @@ export default function Research() {
     setData(null);
     apiFetch(`/api/research?symbol=${encodeURIComponent(urlSymbol)}`)
       .then((res) => res.json())
-      .then(setData);
+      .then(setData)
+      .catch(() => setData({ unavailable: true }));
   }, [urlSymbol]);
 
   useEffect(() => {

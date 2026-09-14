@@ -15,10 +15,17 @@ const initialForm = { name: "", code: "", percentOff: 100, planPro: true, planPr
 
 export default function AdminCampaigns() {
   const [campaigns, setCampaigns] = useState(null);
+  const [error, setError] = useState(false);
   const [message, setMessage] = useState(null);
   const [form, setForm] = useState(initialForm);
 
-  const loadCampaigns = () => apiFetch("/api/admin/campaigns").then((res) => res.json()).then((data) => setCampaigns(data.campaigns));
+  const loadCampaigns = () => {
+    setError(false);
+    return apiFetch("/api/admin/campaigns")
+      .then((res) => res.json())
+      .then((data) => setCampaigns(data.campaigns))
+      .catch(() => setError(true));
+  };
 
   useEffect(() => {
     loadCampaigns();
@@ -73,6 +80,21 @@ export default function AdminCampaigns() {
       }
       setCampaigns((prev) => prev.filter((c) => c.code !== code));
     });
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "60px 36px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#5B6270", marginBottom: 14 }}>Couldn't load campaigns right now.</p>
+        <button
+          type="button"
+          onClick={loadCampaigns}
+          style={{ background: "#4640DE", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "10px 20px", borderRadius: 9 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (campaigns === null) return null;

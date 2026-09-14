@@ -139,7 +139,8 @@ export default function AdminScannerCampaign() {
             if (r.ok) setTemplates([r.data.template]);
           });
         }
-      });
+      })
+      .catch(() => showMessage("Couldn't load the campaign console. Refresh to retry.", true));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters below are stable
   }, []);
 

@@ -23,6 +23,7 @@ function fmtDate(iso) {
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState(null);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -30,7 +31,13 @@ export default function AdminUsers() {
   const [addResult, setAddResult] = useState(null);
   const [busyEmail, setBusyEmail] = useState(null);
 
-  const loadUsers = () => apiFetch("/api/admin/users").then((res) => res.json()).then((data) => setUsers(data.users));
+  const loadUsers = () => {
+    setError(false);
+    return apiFetch("/api/admin/users")
+      .then((res) => res.json())
+      .then((data) => setUsers(data.users))
+      .catch(() => setError(true));
+  };
 
   useEffect(() => {
     loadUsers();
@@ -118,6 +125,21 @@ export default function AdminUsers() {
       showMessage(`${u.email} deleted.`, false);
       setUsers((prev) => prev.filter((x) => x.email !== u.email));
     });
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: "60px 36px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#5B6270", marginBottom: 14 }}>Couldn't load users right now.</p>
+        <button
+          type="button"
+          onClick={loadUsers}
+          style={{ background: "#4640DE", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "10px 20px", borderRadius: 9 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (users === null) return null;

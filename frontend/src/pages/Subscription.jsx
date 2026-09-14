@@ -19,6 +19,7 @@ function postJson(path, body) {
 export default function Subscription() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [bootstrapError, setBootstrapError] = useState(false);
   const [message, setMessage] = useState(null); // {text, isError}
   const [voucherPlan, setVoucherPlan] = useState("pro");
   const [voucherCode, setVoucherCode] = useState("");
@@ -27,9 +28,11 @@ export default function Subscription() {
   const voucherFormRef = useRef(null);
 
   const loadBootstrap = useCallback(() => {
+    setBootstrapError(false);
     return apiFetch("/api/subscription/bootstrap")
       .then((res) => res.json())
-      .then(setData);
+      .then(setData)
+      .catch(() => setBootstrapError(true));
   }, []);
 
   useEffect(() => {
@@ -143,7 +146,28 @@ export default function Subscription() {
     voucherFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  if (!data) return null;
+  if (bootstrapError) {
+    return (
+      <div style={{ width: "100%", padding: "80px 40px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#5B6270", marginBottom: 14 }}>We couldn't load your subscription right now. Please try again.</p>
+        <button
+          type="button"
+          onClick={loadBootstrap}
+          style={{ background: "#4640DE", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "10px 20px", borderRadius: 9 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div style={{ width: "100%", padding: "80px 40px", textAlign: "center", fontSize: 13, color: "#8A90A0" }}>
+        Loading your subscription…
+      </div>
+    );
+  }
   const { subscription: sub, plans, campaigns, razorpay } = data;
 
   return (

@@ -44,7 +44,8 @@ export default function Chart() {
       .then((data) => {
         setBootstrap(data);
         if (!symbol) setSymbol(data.defaultSymbol || null);
-      });
+      })
+      .catch(() => setBootstrap({ symbols: [], indices: [] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resolve default symbol once on mount, same as the old server-rendered bootstrap
   }, []);
 

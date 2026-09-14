@@ -96,6 +96,10 @@ export default function ChartWall() {
       .then((data) => {
         setAllStocks(data.watchlist || []);
         setUnavailable(!!data.unavailable);
+      })
+      .catch(() => {
+        setAllStocks([]);
+        setUnavailable(true);
       });
   }, []);
 

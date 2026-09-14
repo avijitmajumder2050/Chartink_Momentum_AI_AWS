@@ -97,7 +97,8 @@ export default function IpoHub() {
   useEffect(() => {
     apiFetch("/api/ipo-hub")
       .then((res) => res.json())
-      .then(setData);
+      .then(setData)
+      .catch(() => setData({ unavailable: true, ipos: [] }));
   }, []);
 
   useEffect(() => {

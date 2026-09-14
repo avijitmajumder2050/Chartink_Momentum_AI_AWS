@@ -263,7 +263,17 @@ def _get_live_quotes_batch():
             if time.time() - cached_at < LIVE_QUOTE_CACHE_TTL_SECONDS:
                 return data
 
-        data = cache.get_or_fetch("chart_live_quotes_batch", LIVE_QUOTE_CACHE_TTL_SECONDS, _fetch_live_quotes_batch)
+        try:
+            data = cache.get_or_fetch("chart_live_quotes_batch", LIVE_QUOTE_CACHE_TTL_SECONDS, _fetch_live_quotes_batch)
+        except Exception:
+            # Remember the failure too (e.g. market closed, Dhan down) —
+            # without this, every one of the ~356 concurrent get_ohlcv()
+            # calls that reach here while quotes are unavailable would
+            # each redo the full ~27s Dhan retry storm itself, serialized
+            # behind this same lock (up to 356 x 27s ~ minutes for the
+            # whole watchlist scan instead of one ~27s failure shared by
+            # all of them).
+            data = None
         _live_quotes_memory_cache = (time.time(), data)
         return data
 
@@ -286,7 +296,7 @@ def _live_bar_from_quote(live):
 
 def _get_live_bar(instrument_id):
     quotes = _get_live_quotes_batch()
-    return _live_bar_from_quote(quotes.get(str(instrument_id)))
+    return _live_bar_from_quote(quotes.get(str(instrument_id)) if quotes else None)
 
 
 def get_live_circuit_status(instrument_id):

@@ -12,12 +12,31 @@ const DEFAULT_STATUS_STYLE = { color: "#E0473F", background: "#FCEBEA" };
 
 export default function AdminSubscriptions() {
   const [subscriptions, setSubscriptions] = useState(null);
+  const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    setError(false);
     apiFetch("/api/admin/subscriptions")
       .then((res) => res.json())
-      .then((data) => setSubscriptions(data.subscriptions));
-  }, []);
+      .then((data) => setSubscriptions(data.subscriptions))
+      .catch(() => setError(true));
+  }, [retryCount]);
+
+  if (error) {
+    return (
+      <div style={{ padding: "60px 36px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#5B6270", marginBottom: 14 }}>Couldn't load subscriptions right now.</p>
+        <button
+          type="button"
+          onClick={() => setRetryCount((c) => c + 1)}
+          style={{ background: "#4640DE", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "10px 20px", borderRadius: 9 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (subscriptions === null) return null;
 

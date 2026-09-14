@@ -76,7 +76,8 @@ export default function Scanner() {
         // If the initial ?id= isn't a real scanner, fall back to none
         // selected — same validation scanner_page() did server-side.
         if (!data.some((s) => s.id === selectedId)) setSelectedId("");
-      });
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount, mirroring the old server-rendered bootstrap
   }, []);
 
