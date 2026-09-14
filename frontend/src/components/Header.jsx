@@ -50,7 +50,7 @@ export default function Header() {
         <div className="site-header-right">
           {loading ? null : user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-dim)" }}>{user.name}</span>
+              <Link to="/subscription" style={{ fontSize: 13, fontWeight: 600, color: "var(--text-dim)" }}>{user.name}</Link>
               <button type="button" onClick={logout} className="site-login-link" style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "inherit" }}>
                 Log out
               </button>

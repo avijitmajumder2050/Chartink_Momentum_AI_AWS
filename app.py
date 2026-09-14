@@ -677,6 +677,25 @@ def subscription_page():
     )
 
 
+@app.get("/api/subscription/bootstrap")
+@login_required
+def api_subscription_bootstrap():
+    """Bootstrap data for the Subscription page — was only ever inline
+    in subscription_page() before; checkout/cancel/redeem-voucher
+    (below) already were JSON and stay as-is."""
+    user = _current_user()
+    sub = subscription_connector.get_subscription(user["email"])
+    return jsonify(_json_safe({
+        "subscription": sub,
+        "plans": subscription_connector.PLANS,
+        "campaigns": subscription_connector.list_visible_campaigns(),
+        "razorpay": {
+            "configured": razorpay_connector.is_configured(),
+            "keyId": (secrets.get_parameter("/chartink-momentum-ai/razorpay/key_id") if razorpay_connector.is_configured() else None),
+        },
+    }))
+
+
 @app.post("/api/subscription/redeem-voucher")
 @login_required
 def api_subscription_redeem_voucher():
@@ -1196,6 +1215,20 @@ ADMIN_NAV_ITEMS = [
     {"label": "IPO Data", "endpoint": "ipo_hub"},
     {"label": "Courses", "endpoint": "education"},
 ]
+
+
+def _json_safe(obj):
+    # Recursive version of _entry_json_safe's Decimal->float conversion,
+    # for responses with nested dicts/lists (e.g. subscription bootstrap's
+    # campaign list, where DynamoDB hands back Decimal for percent_off/
+    # redemption_count) — jsonify() can't encode Decimal at any depth.
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
 
 
 def _entry_json_safe(entry):
