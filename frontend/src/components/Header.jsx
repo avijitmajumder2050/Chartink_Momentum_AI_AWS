@@ -104,7 +104,7 @@ export default function Header() {
             <NavLink to="/" className={navLinkClass} end>Home</NavLink>
             <NavLink to="/news" className={navLinkClass}>News</NavLink>
             <NavLink to="/capabilities" className={navLinkClass}>Capabilities</NavLink>
-            <div className="site-nav-dropdown" ref={dropdownRef}>
+            <div className={"site-nav-dropdown" + (dropdownOpen ? " open" : "")} ref={dropdownRef}>
               <button
                 type="button"
                 className={"site-nav-link site-nav-dropdown-trigger" + (marketsActive ? " active" : "")}

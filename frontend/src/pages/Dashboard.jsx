@@ -86,22 +86,71 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
+  const [bootstrapError, setBootstrapError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [watchlistTab, setWatchlistTab] = useState("rs");
 
   useEffect(() => {
+    let cancelled = false;
+    setBootstrapError(false);
     apiFetch("/api/dashboard/bootstrap")
       .then((res) => res.json())
-      .then(setData);
-  }, []);
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch(() => {
+        if (!cancelled) setBootstrapError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [retryCount]);
 
+  // Deliberately started only after bootstrap resolves, not concurrently
+  // with it — the market-snapshot fetch scans the full ~350-stock
+  // watchlist and can take a while; firing it at the same time as the
+  // (fast) bootstrap fetch doubled peak load on the same Dhan-quote lock
+  // the two share and could leave the whole dashboard hung behind it.
   useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
     apiFetch("/api/dashboard/market-snapshot")
       .then((res) => res.json())
-      .then(setSnapshot)
-      .catch(() => setSnapshot({}));
-  }, []);
+      .then((res) => {
+        if (!cancelled) setSnapshot(res);
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshot({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
 
-  if (!data || !user) return null;
+  if (bootstrapError) {
+    return (
+      <div style={{ width: "100%", padding: "80px 40px", textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: "#5B6270", marginBottom: 14 }}>
+          We couldn't load your dashboard right now. This is usually a temporary issue with live market data.
+        </p>
+        <button
+          type="button"
+          onClick={() => setRetryCount((c) => c + 1)}
+          style={{ background: "#4640DE", color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "10px 20px", borderRadius: 9 }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!data || !user) {
+    return (
+      <div style={{ width: "100%", padding: "80px 40px", textAlign: "center", fontSize: 13, color: "#8A90A0" }}>
+        Loading your dashboard…
+      </div>
+    );
+  }
 
   const marketOpen = data.marketStatus.startsWith("Markets open");
   const planId = data.subscription.plan;

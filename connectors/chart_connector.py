@@ -111,6 +111,12 @@ def _get_bucket(client):
     raise RuntimeError(f"none of {BUCKET_CANDIDATES} are accessible")
 
 
+DHAN_HTTP_TIMEOUT_SECONDS = 8  # dhanhq's own default is 60s per request; with
+# up to 7 retries in _get_quotes, an unresponsive Dhan API at the default
+# timeout can block a caller for 7+ minutes. A stalled quote request should
+# fail fast and retry, not hang the whole watchlist/dashboard behind it.
+
+
 def _dhan():
     global _dhan_client
     if dhanhq is None:
@@ -119,6 +125,7 @@ def _dhan():
         client_id = secrets.get_parameter("/dhan/client_id")
         access_token = secrets.get_parameter("/dhan/access_token")
         _dhan_client = dhanhq(DhanContext(client_id, access_token))
+        _dhan_client.dhan_http.timeout = DHAN_HTTP_TIMEOUT_SECONDS
     return _dhan_client
 
 
@@ -219,7 +226,7 @@ def _fetch_live_quotes_batch():
     symbol in the watchlist from one round trip, cached together."""
     mapping = _get_mapping()
     instrument_ids = list(mapping.values())
-    quotes = _get_quotes(instrument_ids, "NSE_EQ", max_retries=7)
+    quotes = _get_quotes(instrument_ids, "NSE_EQ", max_retries=3)
     if not quotes:
         raise RuntimeError("no live quotes returned")
     return quotes
