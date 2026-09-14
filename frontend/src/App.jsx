@@ -18,6 +18,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminCampaigns from "./pages/admin/AdminCampaigns";
 import AdminUsers from "./pages/admin/AdminUsers";
+import AdminScannerCampaign from "./pages/admin/AdminScannerCampaign";
 
 export default function App() {
   return (
@@ -64,7 +65,7 @@ export default function App() {
           <Route path="users" element={<AdminUsers />} />
           <Route path="subscriptions" element={<AdminSubscriptions />} />
           <Route path="campaigns" element={<AdminCampaigns />} />
-          {/* /admin/scanner-campaign added here once ported. */}
+          <Route path="scanner-campaign" element={<AdminScannerCampaign />} />
         </Route>
 
         {/* Remaining marketing/static pages (Education, Pricing, Vision)

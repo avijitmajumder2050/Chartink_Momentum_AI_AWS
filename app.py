@@ -1612,6 +1612,44 @@ def admin_scanner_campaign_page():
     )
 
 
+@app.get("/api/admin/scanner-campaign/bootstrap")
+@role_required("admin")
+def api_admin_scanner_campaign_bootstrap():
+    """Everything admin_scanner_campaign_page() gathers on GET, MINUS the
+    default-template auto-seed — that's now an explicit action (see
+    api_admin_seed_default_template below), not a side effect of loading
+    the page. Scanner results themselves aren't included here — the SPA
+    calls the same GET /api/scanners + /api/scanners/<id>/cached the
+    Scanner page already uses, rather than duplicating that data shape."""
+    return jsonify({
+        "entries": [_entry_json_safe(e) for e in campaign_connector.list_entries()],
+        "notifications": campaign_connector.list_recent_notifications(),
+        "templates": campaign_connector.list_templates(),
+        "pushConfigured": fcm_connector.is_configured(),
+        "pushTokenCount": len(campaign_connector.list_all_push_tokens()),
+    })
+
+
+@app.post("/api/admin/scanner-campaign/seed-default-template")
+@role_required("admin")
+def api_admin_seed_default_template():
+    """Explicit version of the side-effecting write admin_scanner_
+    campaign_page() used to do implicitly on every GET when no templates
+    existed yet — the SPA calls this once, deliberately, if the
+    bootstrap response comes back with an empty templates list."""
+    if campaign_connector.list_templates():
+        return jsonify({"error": "Templates already exist."}), 400
+    template = campaign_connector.create_template(
+        name="Default",
+        title="",
+        header="",
+        entry_line_template="{{symbol}} — Entry {{entry}}, SL {{sl}}, Target {{target}}",
+        footer="⚠️ This is for educational purposes only. Not a buy/sell recommendation. Trade at your own risk.",
+        created_by="system",
+    )
+    return jsonify({"ok": True, "template": template})
+
+
 @app.post("/api/admin/campaign-entries")
 @role_required("admin")
 def api_admin_create_entry():
