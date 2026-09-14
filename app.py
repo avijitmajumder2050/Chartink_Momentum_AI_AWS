@@ -2,6 +2,8 @@ import csv
 import datetime
 import decimal
 import functools
+import hashlib
+import hmac
 import io
 import json
 import os
@@ -11,6 +13,7 @@ import string
 import sys
 import threading
 import time
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -1344,6 +1347,20 @@ def admin_users_page():
     )
 
 
+@app.get("/api/admin/users")
+@role_required("admin")
+def api_admin_users():
+    """Mirrors admin_users_page()'s _user_with_subscription() join — the
+    per-user mutation endpoints below (role/enabled/delete/create) were
+    already JSON and stay as-is."""
+    users = []
+    for u in cognito_connector.list_all_users():
+        u = _user_with_subscription(dict(u))
+        u["created_at"] = u["created_at"].isoformat()
+        users.append(u)
+    return jsonify({"users": users})
+
+
 @app.post("/api/admin/users/<email>/role")
 @role_required("admin")
 def api_admin_set_user_role(email):
@@ -1403,9 +1420,62 @@ def api_admin_create_user():
     return jsonify({"ok": True, "email": email, "password": password})
 
 
-@app.get("/admin/users/export.csv")
+EXPORT_LINK_TTL_SECONDS = 60
+
+
+def _sign_export_token(email):
+    # HMAC over email+expiry using the existing Flask secret key — no new
+    # secret needed. Short TTL because this is a bearer-equivalent
+    # credential embedded in a URL (visible in browser history/logs),
+    # unlike the Authorization header every other endpoint uses.
+    expires_at = int(time.time()) + EXPORT_LINK_TTL_SECONDS
+    payload = f"{email}:{expires_at}"
+    signature = hmac.new(app.secret_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{expires_at}.{signature}"
+
+
+def _verify_export_token(email, token):
+    try:
+        expires_at_str, signature = token.split(".", 1)
+        expires_at = int(expires_at_str)
+    except (ValueError, AttributeError):
+        return False
+    if time.time() >= expires_at:
+        return False
+    payload = f"{email}:{expires_at}"
+    expected = hmac.new(app.secret_key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+@app.post("/api/admin/users/export-link")
 @role_required("admin")
+def api_admin_users_export_link():
+    """Issues a short-lived signed URL for the CSV download below — a
+    plain browser navigation (window.location = url, or a real <a href>
+    the browser follows) can't carry the SPA's Authorization: Bearer
+    header the way a fetch() call can, so this endpoint (itself normally
+    bearer-authenticated) hands back a URL that carries its own
+    time-boxed credential instead."""
+    user = _current_user()
+    token = _sign_export_token(user["email"])
+    # quote(..., safe="") — a "+" in the local part (common in test/alias
+    # emails) is otherwise decoded back as a space by query-string parsing,
+    # which would silently break _verify_export_token's HMAC comparison.
+    email_qs = urllib.parse.quote(user["email"], safe="")
+    return jsonify({"downloadUrl": f"/admin/users/export.csv?email={email_qs}&token={token}"})
+
+
+@app.get("/admin/users/export.csv")
 def admin_users_export_csv():
+    email = request.args.get("email", "")
+    token = request.args.get("token", "")
+    if not (email and token and _verify_export_token(email, token)):
+        user = _current_user()
+        if user is None:
+            abort(401)
+        if user["role"] != "admin":
+            abort(403)
+
     users = [_user_with_subscription(dict(u)) for u in cognito_connector.list_all_users()]
     buf = io.StringIO()
     writer = csv.writer(buf)
