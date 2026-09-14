@@ -8,6 +8,7 @@ import News from "./pages/News";
 import IpoHub from "./pages/IpoHub";
 import Research from "./pages/Research";
 import Subscription from "./pages/Subscription";
+import Dashboard from "./pages/Dashboard";
 import Callback from "./auth/Callback";
 import RequireAuth from "./auth/RequireAuth";
 
@@ -31,6 +32,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Subscription />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <RequireAuth>
+              <Dashboard />
             </RequireAuth>
           }
         />

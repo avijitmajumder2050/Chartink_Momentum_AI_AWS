@@ -1177,6 +1177,34 @@ def subscriber_dashboard():
     return render_template("subscriber_dashboard.html", **data)
 
 
+@app.get("/api/dashboard/bootstrap")
+@login_required
+def api_dashboard_bootstrap():
+    """The fast, synchronous part of the dashboard — was only ever inline
+    in subscriber_dashboard() before. Market indices/sector-momentum/
+    breadth deliberately stay out of this endpoint and out of the page
+    load entirely — see /api/dashboard/market-snapshot below, unchanged,
+    still fetched separately/concurrently after the page renders."""
+    user = _current_user()
+    data = {
+        "today": datetime.datetime.now(chart_connector.IST).strftime("%A, %d %b %Y"),
+        "marketStatus": _market_status(),
+        "watchlist": _dashboard_watchlist(),
+        "scanResults": _dashboard_scan_results(),
+        "educationCourses": [
+            c for c in mock_data.education_data()["courses"]
+            if c["title"] in ("Technical Analysis Foundations", "IPO Investing Playbook")
+        ],
+    }
+    try:
+        data["memberSince"] = _cached_member_since(user["email"])
+    except Exception:
+        data["memberSince"] = None
+    data["subscription"] = subscription_connector.get_subscription(user["email"])
+    data["recentAlerts"] = _dashboard_recent_alerts(data["subscription"]["plan"])
+    return jsonify(_json_safe(data))
+
+
 @app.get("/api/dashboard/market-snapshot")
 @login_required
 def api_dashboard_market_snapshot():

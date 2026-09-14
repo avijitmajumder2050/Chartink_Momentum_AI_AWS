@@ -45,6 +45,11 @@ export default function Header() {
             <NavLink to="/markets/chart" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
               Chart
             </NavLink>
+            {user && (
+              <NavLink to="/dashboard" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+                Dashboard
+              </NavLink>
+            )}
           </nav>
         </div>
         <div className="site-header-right">
