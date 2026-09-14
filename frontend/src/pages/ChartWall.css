@@ -1,0 +1,93 @@
+/* Ported verbatim from templates/chart_wall.html's <style> block —
+   scoped to .chart-wall-root, so it never leaks into the rest of the app. */
+.chart-wall-root {
+  --primary:#4640DE; --success:#17A673; --warning:#B98A2E;
+  --error:#E0473F;   --light-bg:#FAF9F6; --card-bg:#ffffff;
+  --text-primary:#14171F; --text-secondary:#5B6270; --border:#E3E6EC;
+}
+.chart-wall-root.dark-mode {
+  --light-bg:#121212; --card-bg:#1e1e1e;
+  --text-primary:#f0f0f0; --text-secondary:#aaa; --border:#333;
+}
+.chart-wall-root { background:var(--light-bg); color:var(--text-primary); transition:background .25s,color .25s; }
+
+.cw-controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 20px; background:var(--card-bg); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:100 }
+.cw-search-wrap{ position:relative; flex:1; min-width:200px }
+.cw-search-wrap i{ position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-secondary); font-size:13px }
+.cw-search-input{ width:100%; padding:8px 12px 8px 34px; border:1px solid var(--border); border-radius:6px; background:var(--light-bg); color:var(--text-primary); font-size:13px }
+.cw-search-input:focus{ outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(70,64,222,.15) }
+.cw-ctrl-select{ padding:8px 11px; border:1px solid var(--border); border-radius:6px; background:var(--light-bg); color:var(--text-primary); font-size:13px; height:36px }
+.cw-view-toggle{ display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; height:36px }
+.cw-view-btn{ padding:0 13px; background:var(--light-bg); border:none; cursor:pointer; color:var(--text-secondary); display:flex; align-items:center; transition:all .15s; font-size:14px }
+.cw-view-btn:hover{ background:rgba(70,64,222,.1) }
+.cw-view-btn.active{ background:var(--primary); color:#fff }
+.cw-ctrl-btn{ padding:0 13px; height:36px; border:1px solid var(--border); border-radius:6px; background:var(--light-bg); color:var(--text-primary); cursor:pointer; font-size:13px; display:flex; align-items:center; gap:6px; transition:all .15s }
+.cw-ctrl-btn:hover{ border-color:var(--primary); color:var(--primary) }
+.cw-ema-label{ font-size:13px; color:var(--text-secondary); display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap }
+.cw-ema-label input{ cursor:pointer; width:14px; height:14px }
+.cw-count-badge{ font-size:12px; background:rgba(70,64,222,.12); color:var(--primary); padding:3px 9px; border-radius:99px; white-space:nowrap }
+
+.cw-range-row{ display:flex; gap:18px; flex-wrap:wrap; align-items:center; padding:10px 20px; background:var(--card-bg); border-bottom:1px solid var(--border) }
+.cw-range-group{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-secondary) }
+.cw-range-group input[type=number]{ width:52px; padding:4px 6px; border:1px solid var(--border); border-radius:5px; background:var(--light-bg); color:var(--text-primary); font-size:12.5px }
+.cw-range-group b{ color:var(--text-primary); font-weight:700; }
+
+.cw-card-grid{ display:grid; gap:16px; padding:16px 20px }
+.cw-stock-card{ background:var(--card-bg); border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.07); overflow:hidden; transition:transform .18s,box-shadow .18s }
+.cw-stock-card:hover{ transform:translateY(-3px); box-shadow:0 6px 20px rgba(0,0,0,.13) }
+.cw-card-header{ display:flex; justify-content:space-between; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border) }
+.cw-stock-meta{ display:flex; align-items:center; gap:10px }
+.cw-stock-name{ font-weight:700; font-size:15px }
+.cw-setup-badge{ font-size:10px; font-weight:600; padding:2px 7px; border-radius:99px; background:rgba(70,64,222,.1); color:var(--primary) }
+.cw-price-wrap{ text-align:right; font-size:12px }
+.cw-price-ltp{ font-size:15px; font-weight:700 }
+.cw-price-chg{ font-size:11px }
+.cw-chg-pos{ color:var(--success) }
+.cw-chg-neg{ color:var(--error) }
+.cw-card-actions{ display:flex; gap:4px; align-items:center }
+.cw-action-btn{ background:none; border:none; cursor:pointer; color:var(--text-secondary); font-size:14px; padding:4px 6px; border-radius:5px; transition:all .15s }
+.cw-action-btn:hover{ color:var(--primary); background:rgba(70,64,222,.1) }
+.cw-action-btn.fav-on{ color:var(--warning) }
+.cw-card-body-wrap{ padding:12px; position:relative }
+.cw-chart-container{ width:100%; position:relative }
+.cw-ohlc-bar{ position:absolute; top:8px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.93); color:#333; padding:4px 10px; border-radius:6px; font-size:11px; z-index:20; pointer-events:none; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.15) }
+.dark-mode .cw-ohlc-bar{ background:rgba(30,30,30,.93); color:#ddd }
+.cw-loading-box{ display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:8px; color:var(--text-secondary) }
+.cw-spinner{ width:26px; height:26px; border:2.5px solid rgba(70,64,222,.25); border-top-color:var(--primary); border-radius:50%; animation:cwspin .7s linear infinite }
+@keyframes cwspin{ to{ transform:rotate(360deg) } }
+.cw-error-box{ display:flex; align-items:center; justify-content:center; height:100%; gap:6px; color:var(--error); font-size:13px }
+.cw-legend{ display:flex; gap:14px; padding:6px 14px; flex-wrap:wrap; align-items:center }
+.cw-leg-item{ display:flex; align-items:center; gap:5px; font-size:11px; color:var(--text-secondary) }
+.cw-leg-dot{ width:18px; height:2.5px; border-radius:2px }
+
+.cw-tbl-wrap{ padding:0 20px 20px; overflow-x:auto }
+.cw-stock-table{ width:100%; border-collapse:collapse; background:var(--card-bg); border-radius:10px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,.07) }
+.cw-stock-table th{ background:var(--primary); color:#fff; padding:11px 14px; text-align:left; font-size:12px; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap }
+.cw-stock-table th.sortable{ cursor:pointer; user-select:none }
+.cw-stock-table th.sortable:hover{ background:rgba(70,64,222,.8) }
+.cw-stock-table td{ padding:10px 14px; border-bottom:1px solid var(--border); font-size:13px }
+.cw-stock-table tr:hover{ background:rgba(70,64,222,.03) }
+.cw-tbl-setup{ font-size:11px; padding:2px 7px; border-radius:99px; background:rgba(70,64,222,.1); color:var(--primary) }
+
+.cw-pg-wrap{ display:flex; justify-content:center; align-items:center; gap:6px; padding:16px 20px; flex-wrap:wrap }
+.cw-pg-btn{ padding:7px 12px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); cursor:pointer; font-size:13px; transition:all .15s; min-width:38px; text-align:center }
+.cw-pg-btn:hover:not(:disabled){ background:var(--primary); color:#fff; border-color:var(--primary) }
+.cw-pg-btn.active{ background:var(--primary); color:#fff; border-color:var(--primary) }
+.cw-pg-btn:disabled{ opacity:.4; cursor:not-allowed }
+.cw-pg-info{ font-size:12px; color:var(--text-secondary); margin:0 4px }
+
+.cw-stock-card.expanded{
+  position:fixed; top:64px; left:0; right:0; bottom:0; z-index:500;
+  border-radius:0; margin:0; transform:none!important;
+  box-shadow:none!important;
+}
+.cw-setup-select{ min-width:180px; max-width:260px }
+#cwToast{ position:fixed; bottom:22px; right:22px; background:#323232; color:#fff; padding:11px 18px; border-radius:8px; font-size:13px; z-index:9999; display:none; box-shadow:0 4px 14px rgba(0,0,0,.35) }
+#cwToast.show{ display:block; animation:cwFadeUp .25s ease }
+@keyframes cwFadeUp{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:none } }
+
+@media(max-width:640px){
+  .cw-controls{ flex-direction:column; align-items:stretch }
+  .cw-search-wrap{ min-width:auto }
+  .cw-card-grid{ padding:10px }
+}

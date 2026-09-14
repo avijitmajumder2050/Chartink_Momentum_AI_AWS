@@ -562,6 +562,18 @@ def api_ipo_hub():
     return jsonify(data)
 
 
+@app.get("/api/watchlist")
+def api_watchlist():
+    """Was only ever baked into server-rendered chart_wall.html before —
+    same fetch chart_wall_page() used, now available standalone."""
+    try:
+        stocks = chart_connector.get_watchlist_stocks_cached()
+    except Exception:
+        app.logger.exception("chart wall stock list fetch failed")
+        return jsonify({"watchlist": [], "unavailable": True})
+    return jsonify({"watchlist": stocks, "unavailable": False})
+
+
 @app.get("/api/research")
 def api_research():
     """Mirrors research()'s exact orchestration (4 connectors, layered

@@ -9,6 +9,7 @@ import IpoHub from "./pages/IpoHub";
 import Research from "./pages/Research";
 import Subscription from "./pages/Subscription";
 import Dashboard from "./pages/Dashboard";
+import ChartWall from "./pages/ChartWall";
 import Callback from "./auth/Callback";
 import RequireAuth from "./auth/RequireAuth";
 
@@ -43,6 +44,7 @@ export default function App() {
             </RequireAuth>
           }
         />
+        <Route path="/markets/chart-wall" element={<ChartWall />} />
         {/* Every other route from the original app (News, Markets/*,
             Education, Pricing, Dashboard, Admin/*, ...) gets added here
             page-by-page in later phases of the rewrite plan. */}
