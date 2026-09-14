@@ -4,6 +4,7 @@ import decimal
 import functools
 import io
 import json
+import os
 import random
 import re
 import string
@@ -21,13 +22,26 @@ from flask import Flask, Response, abort, jsonify, redirect, render_template, re
 import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import mock_data
-from connectors import ai_verdict, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
+from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
 
 app = Flask(__name__)
 app.secret_key = secrets.get_parameter("/chartink-momentum-ai/flask_secret_key")
 app.permanent_session_lifetime = datetime.timedelta(days=30)  # matches the Cognito app client's refresh-token validity
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# Local-dev-only CORS for the React SPA (Vite's default port) hitting this
+# API from a different origin — never enabled unless FLASK_DEBUG=1 is set
+# explicitly, so a production deployment can't accidentally ship this open.
+# (Checking os.environ directly rather than app.debug: app.debug is only
+# True once app.run(debug=True) is actually called, further down this
+# file — too late for a module-level CORS() setup that must run before any
+# request is handled.) The SPA sends its own Authorization: Bearer
+# <id_token> on every call (see _user_from_bearer_token below), so
+# credentialed cookies aren't needed.
+if os.environ.get("FLASK_DEBUG"):
+    from flask_cors import CORS
+    CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
 
 
 # ============================================================
@@ -57,7 +71,7 @@ def _store_tokens(email, tokens):
     session["token_expires_at"] = time.time() + tokens["expires_in"] - 60
 
 
-def _current_user():
+def _current_user_from_session():
     """Session-only check (no live Cognito call on every request) — the
     session cookie is signed with app.secret_key, so its contents can't be
     forged client-side; a stored access_token past its expiry is
@@ -84,10 +98,53 @@ def _current_user():
     return {"email": email, "role": session.get("role", "subscriber"), "name": session.get("name", email.split("@")[0])}
 
 
+def _user_from_bearer_token():
+    """Verifies an `Authorization: Bearer <id_token>` header against
+    Cognito (see connectors/auth_verify.py) — this is how the React SPA
+    authenticates every API call, unlike the legacy Flask session cookie.
+    Returns None (never raises) on a missing/invalid/expired token so
+    callers can fall through to the session-cookie check."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header[len("Bearer "):].strip()
+    try:
+        claims = auth_verify.verify_id_token(token)
+    except auth_verify.TokenVerificationError:
+        return None
+    email = claims.get("email")
+    if not email:
+        return None
+    return {
+        "email": email,
+        "role": _role_from_groups(claims.get("cognito:groups", [])),
+        "name": claims.get("name") or email.split("@")[0],
+    }
+
+
+def _current_user():
+    """Bearer-token check first (the SPA's auth path, verified fresh on
+    every request), falling back to the legacy session-cookie check (any
+    remaining server-rendered page, and the legacy /api/auth/login path) —
+    both work side by side during the SPA migration so neither path breaks
+    the other."""
+    return _user_from_bearer_token() or _current_user_from_session()
+
+
+def _is_api_request():
+    # An unauthenticated /api/* call (from the React SPA, or anything else
+    # calling the JSON API directly) needs a real 401/403 JSON response —
+    # a redirect to the HTML /login page is a page-navigation concept that
+    # doesn't mean anything to a fetch() caller.
+    return request.path.startswith("/api/")
+
+
 def login_required(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
         if _current_user() is None:
+            if _is_api_request():
+                return jsonify({"error": "Not authenticated."}), 401
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
     return wrapped
@@ -96,14 +153,19 @@ def login_required(view):
 def role_required(*roles):
     """Like login_required, but also requires the signed-in user's role to
     be one of `roles` — a wrong-role (but signed-in) user gets a 403 page
-    rather than being bounced back to the login form they already passed."""
+    (or 403 JSON for an API call) rather than being bounced back to the
+    login form they already passed."""
     def decorator(view):
         @functools.wraps(view)
         def wrapped(*args, **kwargs):
             user = _current_user()
             if user is None:
+                if _is_api_request():
+                    return jsonify({"error": "Not authenticated."}), 401
                 return redirect(url_for("login", next=request.path))
             if user["role"] not in roles:
+                if _is_api_request():
+                    return jsonify({"error": "Forbidden."}), 403
                 return render_template("access_denied.html"), 403
             return view(*args, **kwargs)
         return wrapped
@@ -113,6 +175,20 @@ def role_required(*roles):
 @app.context_processor
 def inject_current_user():
     return {"current_user": _current_user()}
+
+
+@app.get("/api/auth/me")
+def api_auth_me():
+    """Current signed-in identity for the React SPA — replaces what Jinja's
+    inject_current_user() context processor gave server-rendered templates
+    for free. Called once on app load (and after login) so the SPA knows
+    who's signed in, their role, and their plan without needing a whole
+    dashboard bootstrap just to render the header/nav correctly."""
+    user = _current_user()
+    if user is None:
+        return jsonify({"error": "Not authenticated."}), 401
+    plan = subscription_connector.get_subscription(user["email"]).get("plan", "free")
+    return jsonify({"email": user["email"], "name": user["name"], "role": user["role"], "plan": plan})
 
 
 @app.post("/api/auth/signup")
