@@ -6,3 +6,12 @@ __pycache__/
 .claude/
 flask_run.log
 flask_server.log
+flask_dev.log
+frontend/vite_dev.log
+
+# The backend .env rule above is for secrets that must never be committed.
+# frontend/.env holds only a public Cognito app-client id + Hosted UI
+# domain — not secret (any SPA ships these in its JS bundle regardless),
+# and needed by anyone else who clones this repo to run the frontend, so
+# it's the one deliberate exception.
+!frontend/.env
