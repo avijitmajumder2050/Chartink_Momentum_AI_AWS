@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% endblock %} — Quantile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+
+{% include "_header.html" %}
+
+<main>
+{% block content %}{% endblock %}
+</main>
+
+{% include "_footer.html" %}
+{% include "_push_banner.html" %}
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

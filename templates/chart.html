@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% set active_page = "chart" %}
+{% block title %}Chart{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  #chartContainer { width: 100%; height: 520px; }
+</style>
+{% endblock %}
+{% block content %}
+
+<div style="width: 100%; padding: 20px 24px 0;">
+  <div style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px;">
+    <form action="{{ url_for('chart_page') }}" method="get" style="display: flex; align-items: center; gap: 8px; background: #FFFFFF; border: 1.5px solid #E3E6EC; border-radius: 10px; padding: 10px 14px;">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#8A90A0" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><path d="M10.5 10.5L14 14"/></svg>
+      <input list="chartSymbolOptions" name="symbol" value="{{ symbol or '' }}" class="search-input" placeholder="Any NSE symbol or index — try TCS, NIFTY 50, or pick from the watchlist" autocomplete="off">
+      <datalist id="chartSymbolOptions">
+        {% for i in indices %}
+        <option value="{{ i }}"></option>
+        {% endfor %}
+        {% for s in symbols %}
+        <option value="{{ s.symbol }}"></option>
+        {% endfor %}
+      </datalist>
+    </form>
+    {% if indices %}
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      {% for i in indices %}
+      <a href="{{ url_for('chart_page', symbol=i) }}" class="pill-tab{{ ' active' if symbol == i.replace(' ', '') else '' }}">{{ i }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if unavailable %}
+<div style="width: 100%; padding: 64px 48px;">
+  <div style="max-width: 640px; margin: 0 auto; text-align: center; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 18px; padding: 48px 36px;">
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px;">Chart data temporarily unavailable</h2>
+    <p style="font-size: 14px; color: #5B6270; line-height: 1.6; margin: 0;">We couldn't reach the chart data source just now. Please try again shortly.</p>
+  </div>
+</div>
+{% elif not_found %}
+<div style="width: 100%; padding: 64px 48px;">
+  <div style="max-width: 640px; margin: 0 auto; text-align: center; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 18px; padding: 48px 36px;">
+    <h2 style="font-size: 20px; font-weight: 800; margin: 0 0 8px;">No chart data for "{{ symbol }}"</h2>
+    <p style="font-size: 14px; color: #5B6270; line-height: 1.6; margin: 0;">We couldn't find that symbol in the watchlist or on NSE. Try the exact exchange symbol, e.g. <strong>TCS</strong>, <strong>INFY</strong>, <strong>RELIANCE</strong>.</p>
+  </div>
+</div>
+{% else %}
+
+<div style="width: 100%; padding: 12px 24px 20px; display: flex; gap: 18px; align-items: flex-start;">
+  <!-- MAIN CHART WORKSPACE -->
+  <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+    <!-- TOOLBAR -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 14px 18px;">
+      <span id="chartSymbolName" style="font-size: 15px; font-weight: 700; display: block; line-height: 1.1;">{{ symbol }}</span>
+      <span id="chartPriceLine" class="num" style="font-size: 12px; color: #8A90A0; font-weight: 600;">—</span>
+    </div>
+
+    <!-- CHART AREA -->
+    <div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 18px;">
+      <div id="chartContainer"></div>
+      <div id="chartEmpty" hidden style="height: 520px; display: flex; align-items: center; justify-content: center; color: #8A90A0; font-size: 13.5px;">No chart data for this symbol.</div>
+      <p style="font-size: 11px; color: #B0B4C0; margin: 10px 0 0;">Daily OHLCV — momentum watchlist data store, with a Dhan security-master + historical-data fallback for symbols outside it. EMA 10/20/50/200 overlays.</p>
+    </div>
+  </div>
+
+  <!-- WATCHLIST SIDEBAR -->
+  <div style="width: 280px; flex-shrink: 0; background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 4px; max-height: 640px; overflow-y: auto;">
+    <span style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">Momentum watchlist</span>
+    <span style="font-size: 11px; color: #8A90A0; margin-bottom: 10px;">Sorted by RS Rating</span>
+    {% for s in symbols %}
+    <a href="{{ url_for('chart_page', symbol=s.symbol) }}" style="display: flex; justify-content: space-between; align-items: center; padding: 9px 8px; border-radius: 8px; background: {{ '#EEEDFD' if s.symbol == symbol else 'transparent' }}; color: inherit;">
+      <span style="font-size: 13px; font-weight: 700; color: {{ '#4640DE' if s.symbol == symbol else '#14171F' }};">{{ s.symbol }}</span>
+      <span class="num" style="font-size: 12px; font-weight: 600; color: #8A90A0;">RS {{ s.rsRating }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<script type="application/json" id="chartBarsData">{{ bars | tojson }}</script>
+
+<script>
+(function () {
+  var barsData = JSON.parse(document.getElementById('chartBarsData').textContent);
+  var container = document.getElementById('chartContainer');
+  var emptyEl = document.getElementById('chartEmpty');
+
+  if (!barsData.length) {
+    container.hidden = true;
+    emptyEl.hidden = false;
+    return;
+  }
+
+  var last = barsData[barsData.length - 1];
+  var prev = barsData.length > 1 ? barsData[barsData.length - 2] : last;
+  var chg = prev.close ? ((last.close - prev.close) / prev.close * 100) : 0;
+  var up = chg >= 0;
+  document.getElementById('chartPriceLine').innerHTML =
+    '₹' + last.close.toLocaleString('en-IN') +
+    ' <span style="color: ' + (up ? '#17A673' : '#E0473F') + ';">' + (up ? '+' : '') + chg.toFixed(2) + '%</span>' +
+    ' <span style="color: #B0B4C0;">(' + last.time + ')</span>';
+
+  var chart = LightweightCharts.createChart(container, {
+    height: 520,
+    layout: { background: { type: 'solid', color: '#FFFFFF' }, textColor: '#5B6270', fontSize: 11 },
+    grid: {
+      vertLines: { color: 'rgba(20,23,31,0.04)' },
+      horzLines: { color: 'rgba(20,23,31,0.04)' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#E3E6EC' },
+    timeScale: { borderColor: '#E3E6EC', rightOffset: 6, barSpacing: 7 },
+    handleScroll: true,
+    handleScale: true,
+  });
+
+  var candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: '#17A673',
+    downColor: '#E0473F',
+    borderVisible: false,
+    wickUpColor: '#17A673',
+    wickDownColor: '#E0473F',
+  });
+  candleSeries.setData(barsData);
+
+  function calcEMA(data, period) {
+    if (!data.length) return [];
+    var multiplier = 2 / (period + 1);
+    var ema = data[0].close;
+    var result = [{ time: data[0].time, value: ema }];
+    for (var i = 1; i < data.length; i++) {
+      ema = (data[i].close - ema) * multiplier + ema;
+      result.push({ time: data[i].time, value: Number(ema.toFixed(2)) });
+    }
+    return result;
+  }
+
+  var EMA_COLORS = { 10: '#2962ff', 20: '#F2A93B', 50: '#aa00ff', 200: '#E0473F' };
+  [10, 20, 50, 200].forEach(function (period) {
+    var series = chart.addSeries(LightweightCharts.LineSeries, {
+      color: EMA_COLORS[period],
+      lineWidth: period <= 20 ? 2 : 1,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    series.setData(calcEMA(barsData, period));
+  });
+
+  var volSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
+    priceFormat: { type: 'volume' },
+    priceScaleId: '',
+  });
+  volSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  volSeries.setData(barsData.map(function (b) {
+    return { time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(23,166,115,.45)' : 'rgba(224,71,63,.45)' };
+  }));
+
+  chart.timeScale().fitContent();
+
+  window.addEventListener('resize', function () {
+    chart.applyOptions({ width: container.clientWidth });
+  });
+})();
+</script>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set active_page = "admin_dashboard" %}
+{% block title %}Subscriptions{% endblock %}
+{% block content %}
+
+<div style="width: 100%; display: flex;">
+  {% include "_admin_sidebar.html" %}
+
+  <div style="flex: 1; padding: 30px 36px 60px;">
+    <div style="margin-bottom: 22px;">
+      <span style="font-size: 12px; color: #8A90A0;">{{ subscriptions | length }} accounts with subscription history</span>
+      <h1 style="font-size: 24px; font-weight: 800; margin-top: 2px;">Subscriptions</h1>
+      <p style="font-size: 13px; color: #5B6270; margin-top: 6px;">Accounts that have never redeemed a voucher or paid don't appear here — they're implicitly on the Free plan.</p>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 16px; overflow: hidden;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid #E3E6EC;">
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Email</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Plan</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Status</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Period end</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Voucher</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Razorpay sub</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in subscriptions %}
+          <tr style="border-bottom: 1px solid #F0F1F4;">
+            <td style="padding: 12px 16px; font-size: 13px; font-weight: 600;">{{ s.email }}</td>
+            <td style="padding: 12px 16px; font-size: 13px; text-transform: capitalize;">{{ s.plan }}</td>
+            <td style="padding: 12px 16px;">
+              <span style="font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 100px;
+                {% if s.status == 'active' %}color: #17A673; background: #E6F7F1;
+                {% elif s.status == 'canceled' %}color: #B98A2E; background: #FBF2E1;
+                {% else %}color: #E0473F; background: #FCEBEA;{% endif %}">{{ s.status }}</span>
+            </td>
+            <td style="padding: 12px 16px; font-size: 13px;">{{ s.current_period_end[:10] if s.current_period_end else "—" }}</td>
+            <td style="padding: 12px 16px; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">{{ s.voucher_code or "—" }}</td>
+            <td style="padding: 12px 16px; font-size: 12px; color: #8A90A0;">{{ s.razorpay_subscription_id or "—" }}</td>
+            <td style="padding: 12px 16px; font-size: 13px;">{{ s.updated_at[:10] if s.updated_at else "—" }}</td>
+          </tr>
+          {% endfor %}
+          {% if not subscriptions %}
+          <tr><td colspan="7" style="padding: 30px 16px; text-align: center; font-size: 13px; color: #8A90A0;">No subscription activity yet — everyone's on the implicit Free plan.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,17 @@
+{% if current_user %}
+<div id="pushBanner" hidden role="dialog" aria-label="Enable push notifications">
+  <div class="push-banner-body">
+    <div class="push-banner-title">Turn on push notifications?</div>
+    <div class="push-banner-sub">Get instant alerts for new trade signals and account activity.</div>
+  </div>
+  <label class="toggle-switch" style="align-self: center;">
+    <input type="checkbox" data-push-toggle aria-label="Enable push notifications">
+    <span class="toggle-switch-track"></span>
+  </label>
+  <button type="button" id="pushBannerClose" class="push-banner-close" aria-label="Dismiss">&times;</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="{{ url_for('static', filename='js/push-notifications.js') }}"></script>
+{% endif %}

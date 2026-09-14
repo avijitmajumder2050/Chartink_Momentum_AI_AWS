@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% set active_page = "admin_dashboard" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+
+<div style="width: 100%; display: flex;">
+  {% include "_admin_sidebar.html" %}
+
+  <div style="flex: 1; padding: 30px 36px 60px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <span style="font-size: 12px; color: #8A90A0;">{{ users | length }} total</span>
+        <h1 style="font-size: 24px; font-weight: 800; margin-top: 2px;">Users</h1>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="text" id="userSearch" placeholder="Search name or email…" style="border: 1.5px solid #E3E6EC; border-radius: 9px; padding: 9px 14px; font-size: 13px; width: 220px;">
+        <a href="{{ url_for('admin_users_export_csv') }}" style="border: 1.5px solid #E3E6EC; background: #FFFFFF; color: #14171F; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 700; text-decoration: none;">Export CSV</a>
+        <button type="button" id="addUserBtn" style="background: #4640DE; color: white; border: none; border-radius: 9px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;">+ Add user</button>
+      </div>
+    </div>
+
+    <div id="userMessage" style="display: none; font-size: 13px; font-weight: 600; padding: 11px 14px; border-radius: 10px; margin-bottom: 16px;"></div>
+
+    <!-- ADD USER FORM (hidden by default) -->
+    <div id="addUserPanel" hidden style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 16px; padding: 22px; margin-bottom: 20px;">
+      <span style="font-size: 14px; font-weight: 700; display: block; margin-bottom: 14px;">Add a user</span>
+      <form id="addUserForm" style="display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; align-items: end;">
+        <label>
+          <span style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 5px;">Full name</span>
+          <input type="text" name="name" required class="au-input">
+        </label>
+        <label>
+          <span style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 5px;">Email</span>
+          <input type="email" name="email" required class="au-input">
+        </label>
+        <label>
+          <span style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 5px;">Password (optional)</span>
+          <input type="text" name="password" placeholder="Auto-generated if blank" class="au-input">
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 10px 0;">
+          <input type="checkbox" name="makeAdmin"> Make admin
+        </label>
+        <button type="submit" style="grid-column: span 2; background: #4640DE; color: white; border: none; font-size: 13.5px; font-weight: 700; padding: 11px 0; border-radius: 9px; cursor: pointer;">Create user</button>
+      </form>
+      <div id="addUserResult" style="display: none; margin-top: 14px; padding: 12px 14px; background: #FBF2E1; border-radius: 10px; font-size: 13px;"></div>
+    </div>
+
+    <div style="background: #FFFFFF; border: 1px solid #E3E6EC; border-radius: 16px; overflow: hidden;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid #E3E6EC;">
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">User</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Plan</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Status</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Joined</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;">Role</th>
+            <th style="padding: 12px 16px; font-size: 11px; color: #8A90A0; text-transform: uppercase; text-align: left;"></th>
+          </tr>
+        </thead>
+        <tbody id="usersTbody">
+          {% for u in users %}
+          <tr data-search="{{ (u.name + ' ' + u.email) | lower }}" data-email="{{ u.email }}" style="border-bottom: 1px solid #F0F1F4;">
+            <td style="padding: 12px 16px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 28px; height: 28px; border-radius: 50%; background: #4640DE; color: white; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">{{ u.name[:2] | upper }}</div>
+                <div><span style="font-weight: 600; display: block; font-size: 13px;">{{ u.name }}</span><span style="font-size: 11.5px; color: #8A90A0;">{{ u.email }}</span></div>
+              </div>
+            </td>
+            <td style="padding: 12px 16px; font-size: 13px;">{{ u.plan }}</td>
+            <td style="padding: 12px 16px;">
+              <span style="font-size: 11.5px; font-weight: 700; padding: 4px 9px; border-radius: 100px; {% if u.enabled %}color: #17A673; background: #E6F7F1;{% else %}color: #E0473F; background: #FCEBEA;{% endif %}">{{ "Active" if u.enabled else "Disabled" }}</span>
+            </td>
+            <td style="padding: 12px 16px; font-size: 13px;">{{ u.created_at.strftime("%d %b %Y") }}</td>
+            <td style="padding: 12px 16px;">
+              <button type="button" class="role-toggle-btn" data-email="{{ u.email }}" data-is-admin="{{ 'true' if u.role == 'admin' else 'false' }}"
+                style="font-size: 11.5px; font-weight: 700; padding: 5px 11px; border-radius: 100px; border: none; cursor: pointer;
+                {% if u.role == 'admin' %}background: #EEEDFD; color: #4640DE;{% else %}background: #F0F1F4; color: #5B6270;{% endif %}">
+                {{ "Admin — remove" if u.role == "admin" else "Make admin" }}
+              </button>
+            </td>
+            <td style="padding: 12px 16px; white-space: nowrap;">
+              <button type="button" class="enabled-toggle-btn" data-email="{{ u.email }}" data-is-enabled="{{ 'true' if u.enabled else 'false' }}"
+                style="font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: none; cursor: pointer; background: #F0F1F4; color: #5B6270; margin-right: 6px;">
+                {{ "Disable" if u.enabled else "Enable" }}
+              </button>
+              <button type="button" class="delete-user-btn" data-email="{{ u.email }}"
+                style="font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: none; cursor: pointer; background: #FCEBEA; color: #E0473F;">
+                Delete
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .au-input { width: 100%; border: 1.5px solid #E3E6EC; border-radius: 9px; padding: 9px 11px; font-size: 13px; font-family: inherit; }
+</style>
+
+<script>
+(function () {
+  var searchInput = document.getElementById("userSearch");
+  var tbody = document.getElementById("usersTbody");
+  var messageEl = document.getElementById("userMessage");
+  var addUserBtn = document.getElementById("addUserBtn");
+  var addUserPanel = document.getElementById("addUserPanel");
+  var addUserForm = document.getElementById("addUserForm");
+  var addUserResult = document.getElementById("addUserResult");
+
+  searchInput.addEventListener("input", function () {
+    var q = searchInput.value.toLowerCase().trim();
+    tbody.querySelectorAll("tr").forEach(function (row) {
+      row.style.display = row.getAttribute("data-search").indexOf(q) === -1 ? "none" : "";
+    });
+  });
+
+  function showMessage(text, isError) {
+    messageEl.textContent = text;
+    messageEl.style.display = "block";
+    messageEl.style.background = isError ? "#FDEDEC" : "#EAF7F1";
+    messageEl.style.color = isError ? "#C0392B" : "#17A673";
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    }).then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); });
+  }
+
+  addUserBtn.addEventListener("click", function () {
+    addUserPanel.hidden = !addUserPanel.hidden;
+  });
+
+  addUserForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var fd = new FormData(addUserForm);
+    postJson("/api/admin/users", {
+      name: fd.get("name"),
+      email: fd.get("email"),
+      password: fd.get("password") || undefined,
+      makeAdmin: !!fd.get("makeAdmin"),
+    }).then(function (result) {
+      if (!result.ok) { showMessage(result.data.error || "Couldn't create user.", true); return; }
+      addUserResult.style.display = "block";
+      addUserResult.innerHTML = "Created <strong>" + result.data.email + "</strong> — share this password with them: <code style=\"background:#fff;padding:2px 6px;border-radius:5px;\">" + result.data.password + "</code>";
+      addUserForm.reset();
+      setTimeout(function () { window.location.reload(); }, 2500);
+    });
+  });
+
+  tbody.addEventListener("click", function (e) {
+    var roleBtn = e.target.closest(".role-toggle-btn");
+    var enabledBtn = e.target.closest(".enabled-toggle-btn");
+    var deleteBtn = e.target.closest(".delete-user-btn");
+
+    if (roleBtn) {
+      var email = roleBtn.getAttribute("data-email");
+      var makeAdmin = roleBtn.getAttribute("data-is-admin") !== "true";
+      if (!window.confirm((makeAdmin ? "Make " : "Remove admin access from ") + email + "?")) return;
+      roleBtn.disabled = true;
+      postJson("/api/admin/users/" + encodeURIComponent(email) + "/role", { admin: makeAdmin }).then(function (result) {
+        roleBtn.disabled = false;
+        if (!result.ok) { showMessage(result.data.error || "Couldn't update role.", true); return; }
+        showMessage(email + " is now " + (makeAdmin ? "an admin" : "a subscriber") + ".", false);
+        setTimeout(function () { window.location.reload(); }, 900);
+      });
+      return;
+    }
+
+    if (enabledBtn) {
+      var email2 = enabledBtn.getAttribute("data-email");
+      var enable = enabledBtn.getAttribute("data-is-enabled") !== "true";
+      if (!window.confirm((enable ? "Re-enable " : "Disable ") + email2 + (enable ? "?" : "? They'll be signed out and unable to log in until re-enabled."))) return;
+      enabledBtn.disabled = true;
+      postJson("/api/admin/users/" + encodeURIComponent(email2) + "/enabled", { enabled: enable }).then(function (result) {
+        enabledBtn.disabled = false;
+        if (!result.ok) { showMessage(result.data.error || "Couldn't update status.", true); return; }
+        showMessage(email2 + " is now " + (enable ? "active" : "disabled") + ".", false);
+        setTimeout(function () { window.location.reload(); }, 900);
+      });
+      return;
+    }
+
+    if (deleteBtn) {
+      var email3 = deleteBtn.getAttribute("data-email");
+      if (!window.confirm("Permanently delete " + email3 + "? This cannot be undone.")) return;
+      deleteBtn.disabled = true;
+      postJson("/api/admin/users/" + encodeURIComponent(email3) + "/delete", {}).then(function (result) {
+        deleteBtn.disabled = false;
+        if (!result.ok) { showMessage(result.data.error || "Couldn't delete user.", true); return; }
+        showMessage(email3 + " deleted.", false);
+        deleteBtn.closest("tr").remove();
+      });
+    }
+  });
+})();
+</script>
+
+{% endblock %}

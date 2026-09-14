@@ -1,0 +1,8 @@
+.env
+.cache/
+.venv/
+__pycache__/
+*.pyc
+.claude/
+flask_run.log
+flask_server.log

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% set active_page = "scanner" %}
+{% block title %}Scanner{% endblock %}
+{% block content %}
+
+<div style="width: 100%; padding: 32px 48px 56px;">
+  <div style="max-width: 1200px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 22px; gap: 16px; flex-wrap: wrap;">
+      <div>
+        <span style="color: #4640DE; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Scanner</span>
+        <h1 style="font-size: 28px; font-weight: 800; margin-top: 6px;">Screener console</h1>
+        <p style="font-size: 13.5px; color: #5B6270; margin: 8px 0 0; max-width: 560px;">Pick a scanner — each one calls its backend Python code live and renders the result below.</p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; border: 1.5px solid #D8DAE3; border-radius: 10px; padding: 9px 14px;">
+        <div style="width: 7px; height: 7px; border-radius: 50%; background: #17A673;"></div>
+        <span style="font-size: 12.5px; font-weight: 600; color: #5B6270;">Live scan</span>
+      </div>
+    </div>
+
+    <div class="scanner-layout">
+      <div class="sidebar">
+        <span class="sidebar-title">Scanners</span>
+        <div class="scanner-list" id="scannerList">
+          {% for sid, s in scanners.items() %}
+          <button
+            type="button"
+            class="scanner-option{{ ' selected' if sid == selected_id else '' }}"
+            data-id="{{ sid }}"
+            data-description="{{ s.description }}"
+          >{{ s.name }}</button>
+          {% endfor %}
+        </div>
+        <p id="scannerDesc" class="scanner-desc"></p>
+        <button id="runBtn" type="button" class="run-btn">Run Scan</button>
+      </div>
+
+      <div class="results-panel">
+        <div class="results-head">
+          <p id="status" class="status"></p>
+          <p id="meta" class="meta" style="padding: 0;"></p>
+        </div>
+        <div id="stats" class="stats"></div>
+        <div id="tableWrap"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="chartPreviewBackdrop" class="modal-backdrop" hidden style="background: rgba(20,23,31,0.45);">
+  <div class="chart-preview-box">
+    <button type="button" id="chartPreviewClose" aria-label="Close" class="chart-preview-close">&times;</button>
+    <div class="chart-preview-head">
+      <span id="chartPreviewSymbol" class="chart-preview-symbol"></span>
+      <a id="chartPreviewFullLink" href="#" target="_blank" rel="noopener" class="chart-preview-full-link">Open full chart &#8599;</a>
+    </div>
+    <div id="chartPreviewBody" class="chart-preview-body">
+      <div class="chart-preview-loading">Loading chart…</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.INITIAL_SCANNER_ID = {{ selected_id|tojson }};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
+<script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+{% endblock %}
