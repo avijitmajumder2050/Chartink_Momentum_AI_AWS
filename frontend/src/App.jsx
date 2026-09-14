@@ -19,6 +19,9 @@ import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminCampaigns from "./pages/admin/AdminCampaigns";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminScannerCampaign from "./pages/admin/AdminScannerCampaign";
+import Education from "./pages/Education";
+import Pricing from "./pages/Pricing";
+import Vision from "./pages/Vision";
 
 export default function App() {
   return (
@@ -68,8 +71,9 @@ export default function App() {
           <Route path="scanner-campaign" element={<AdminScannerCampaign />} />
         </Route>
 
-        {/* Remaining marketing/static pages (Education, Pricing, Vision)
-            get added here in Phase 4 of the rewrite plan. */}
+        <Route path="/education" element={<Education />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/vision" element={<Vision />} />
       </Route>
     </Routes>
   );

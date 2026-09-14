@@ -1,14 +1,36 @@
-import { Link, NavLink } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
-// Deliberately a reduced nav for now — only routes that actually exist in
-// the React app get a link (just Capabilities in Phase 1). The full nav
-// from templates/_header.html (News, Markets dropdown, Education,
-// Pricing, Dashboard, Admin, the notification bell) gets filled back in
-// page-by-page as each is ported in later phases (see the rewrite plan) —
-// linking to a page that isn't built yet would just be a dead link.
+const MARKETS_PATHS = ["/markets/ipo-hub", "/markets/research", "/scanner", "/markets/chart", "/markets/chart-wall"];
+
+// Ported from templates/_header.html, now that every page it links to
+// exists (Phase 4 completed the page set) — full nav including the
+// Markets dropdown, restored from Phase 1's deliberately reduced version.
 export default function Header() {
   const { user, loading, login, logout } = useAuth();
+  const location = useLocation();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const marketsActive = MARKETS_PATHS.some((p) => location.pathname === p || location.pathname.startsWith(p + "?"));
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false);
+    }
+    function onKeyDown(e) {
+      if (e.key === "Escape") setDropdownOpen(false);
+    }
+    document.addEventListener("click", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  const navLinkClass = ({ isActive }) => "site-nav-link" + (isActive ? " active" : "");
 
   return (
     <header className="site-header">
@@ -24,40 +46,39 @@ export default function Header() {
             Quantile
           </Link>
           <nav className="site-nav">
-            <NavLink to="/" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")} end>
-              Home
-            </NavLink>
-            <NavLink to="/news" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              News
-            </NavLink>
-            <NavLink to="/capabilities" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              Capabilities
-            </NavLink>
-            <NavLink to="/markets/ipo-hub" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              IPO Hub
-            </NavLink>
-            <NavLink to="/markets/research" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              Research
-            </NavLink>
-            <NavLink to="/scanner" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              Scanner
-            </NavLink>
-            <NavLink to="/markets/chart" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              Chart
-            </NavLink>
-            <NavLink to="/markets/chart-wall" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-              Chart Wall
-            </NavLink>
-            {user && (
-              <NavLink to="/dashboard" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-                Dashboard
-              </NavLink>
-            )}
-            {user?.role === "admin" && (
-              <NavLink to="/admin" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
-                Admin
-              </NavLink>
-            )}
+            <NavLink to="/" className={navLinkClass} end>Home</NavLink>
+            <NavLink to="/news" className={navLinkClass}>News</NavLink>
+            <NavLink to="/capabilities" className={navLinkClass}>Capabilities</NavLink>
+            <div className="site-nav-dropdown" ref={dropdownRef}>
+              <button
+                type="button"
+                className={"site-nav-link site-nav-dropdown-trigger" + (marketsActive ? " active" : "")}
+                aria-haspopup="true"
+                aria-expanded={dropdownOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownOpen((v) => !v);
+                }}
+              >
+                Markets
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M2.5 4L5.5 7L8.5 4" /></svg>
+              </button>
+              {dropdownOpen && (
+                <div className="site-nav-dropdown-menu">
+                  <div className="site-nav-dropdown-menu-inner">
+                    <Link to="/markets/ipo-hub" onClick={() => setDropdownOpen(false)}>IPO Hub</Link>
+                    <Link to="/markets/research" onClick={() => setDropdownOpen(false)}>Stock Research</Link>
+                    <Link to="/scanner" onClick={() => setDropdownOpen(false)}>Scanner</Link>
+                    <Link to="/markets/chart" onClick={() => setDropdownOpen(false)}>Chart</Link>
+                    <Link to="/markets/chart-wall" onClick={() => setDropdownOpen(false)}>Chart Wall</Link>
+                  </div>
+                </div>
+              )}
+            </div>
+            <NavLink to="/education" className={navLinkClass}>Education</NavLink>
+            <NavLink to="/pricing" className={navLinkClass}>Pricing</NavLink>
+            {user && <NavLink to="/dashboard" className={navLinkClass}>Dashboard</NavLink>}
+            {user?.role === "admin" && <NavLink to="/admin" className={navLinkClass}>Admin</NavLink>}
           </nav>
         </div>
         <div className="site-header-right">

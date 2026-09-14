@@ -1,9 +1,8 @@
 import { Link } from "react-router-dom";
 
-// Ported from templates/_footer.html. Links to pages not yet built in the
-// SPA stay "#" for now (same placeholder convention _footer.html itself
-// already used for Webinars/Glossary/Blog/legal pages) — swapped for real
-// <Link>s as each page is ported in later phases.
+// Ported from templates/_footer.html. Webinars/Glossary/Blog/Careers/
+// Contact/legal links stay "#" — those were already dead placeholders
+// in the original Flask app too, not pages this rewrite is dropping.
 export default function Footer() {
   return (
     <footer className="site-footer">
@@ -23,24 +22,24 @@ export default function Footer() {
         <div className="site-footer-cols">
           <div className="site-footer-col">
             <span className="site-footer-col-title">Product</span>
-            <a href="#">IPO Hub</a>
-            <a href="#">Stock Research</a>
-            <a href="#">Scanner</a>
-            <a href="#">Charts</a>
-            <a href="#">News</a>
+            <Link to="/markets/ipo-hub">IPO Hub</Link>
+            <Link to="/markets/research">Stock Research</Link>
+            <Link to="/scanner">Scanner</Link>
+            <Link to="/markets/chart">Charts</Link>
+            <Link to="/news">News</Link>
           </div>
           <div className="site-footer-col">
             <span className="site-footer-col-title">Learn</span>
-            <a href="#">Education</a>
+            <Link to="/education">Education</Link>
             <a href="#">Webinars</a>
             <a href="#">Glossary</a>
             <a href="#">Blog</a>
           </div>
           <div className="site-footer-col">
             <span className="site-footer-col-title">Company</span>
-            <a href="#">Vision</a>
+            <Link to="/vision">Vision</Link>
             <Link to="/capabilities">Capabilities</Link>
-            <a href="#">Pricing</a>
+            <Link to="/pricing">Pricing</Link>
             <a href="#">Careers</a>
             <a href="#">Contact</a>
           </div>
