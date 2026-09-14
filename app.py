@@ -539,6 +539,29 @@ def chart_page():
     return render_template("chart.html", symbols=symbols, indices=POPULAR_INDICES, symbol=symbol, bars=bars, unavailable=False)
 
 
+@app.get("/api/news")
+def api_news():
+    try:
+        data = news_connector.get_news_data()
+        # gainers/losers need a live quotes feed, not a news connector concern
+        data["gainers"] = mock_data.news_data()["gainers"]
+        data["losers"] = mock_data.news_data()["losers"]
+    except Exception:
+        app.logger.exception("news connector failed")
+        data = {"stories": [], "trending": [], "gainers": [], "losers": [], "unavailable": True}
+    return jsonify(data)
+
+
+@app.get("/api/ipo-hub")
+def api_ipo_hub():
+    try:
+        data = ipo_connector.get_ipo_hub_data()
+    except Exception:
+        app.logger.exception("IPO connector failed")
+        data = {"ipos": [], "subCategories": [], "unavailable": True}
+    return jsonify(data)
+
+
 @app.get("/api/chart/bootstrap")
 def api_chart_bootstrap():
     """Symbol-list + default-symbol resolution for the Chart page — was

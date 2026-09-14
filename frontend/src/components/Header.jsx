@@ -27,8 +27,14 @@ export default function Header() {
             <NavLink to="/" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")} end>
               Home
             </NavLink>
+            <NavLink to="/news" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+              News
+            </NavLink>
             <NavLink to="/capabilities" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
               Capabilities
+            </NavLink>
+            <NavLink to="/markets/ipo-hub" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+              IPO Hub
             </NavLink>
             <NavLink to="/scanner" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
               Scanner
