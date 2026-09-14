@@ -6,6 +6,7 @@ import Scanner from "./pages/Scanner";
 import Chart from "./pages/Chart";
 import News from "./pages/News";
 import IpoHub from "./pages/IpoHub";
+import Research from "./pages/Research";
 import Callback from "./auth/Callback";
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/markets/chart" element={<Chart />} />
         <Route path="/news" element={<News />} />
         <Route path="/markets/ipo-hub" element={<IpoHub />} />
+        <Route path="/markets/research" element={<Research />} />
         {/* Every other route from the original app (News, Markets/*,
             Education, Pricing, Dashboard, Admin/*, ...) gets added here
             page-by-page in later phases of the rewrite plan. */}

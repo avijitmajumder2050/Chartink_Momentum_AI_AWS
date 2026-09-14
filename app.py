@@ -562,6 +562,49 @@ def api_ipo_hub():
     return jsonify(data)
 
 
+@app.get("/api/research")
+def api_research():
+    """Mirrors research()'s exact orchestration (4 connectors, layered
+    best-effort fallbacks) as JSON instead of a render — same flat shape
+    Jinja already consumed via simple truthiness checks (epsStrength,
+    priceHistory, aiVerdict etc. just absent when that best-effort step
+    failed), rather than inventing a new nested "sections" wrapper."""
+    symbol = _normalize_symbol(request.args.get("symbol"))
+    try:
+        data = fundamentals_connector.get_research_data(symbol)
+        data.update(fundamentals_connector.get_fundamentals_data(symbol))
+    except RuntimeError:
+        return jsonify({"symbol": symbol, "notFound": True})
+    except Exception:
+        app.logger.exception("fundamentals connector failed for %s", symbol)
+        return jsonify({"symbol": symbol, "unavailable": True})
+
+    try:
+        data.update(marketsmith_connector.get_strength_ratings(symbol))
+    except Exception:
+        app.logger.exception("marketsmith connector failed for %s", symbol)
+
+    try:
+        data["priceHistory"] = fundamentals_connector.get_price_history(symbol)
+    except Exception:
+        app.logger.exception("price history fetch failed for %s", symbol)
+
+    try:
+        data["aiVerdict"] = ai_verdict.get_verdict(
+            symbol,
+            data.get("header", {}),
+            data.get("fundamentals", []),
+            data.get("ratios", []),
+            data.get("epsStrength"),
+            data.get("priceStrength"),
+        )
+    except Exception:
+        app.logger.exception("AI verdict generation failed for %s", symbol)
+
+    data["symbol"] = symbol
+    return jsonify(data)
+
+
 @app.get("/api/chart/bootstrap")
 def api_chart_bootstrap():
     """Symbol-list + default-symbol resolution for the Chart page — was
