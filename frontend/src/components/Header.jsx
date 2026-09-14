@@ -30,6 +30,9 @@ export default function Header() {
             <NavLink to="/capabilities" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
               Capabilities
             </NavLink>
+            <NavLink to="/scanner" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+              Scanner
+            </NavLink>
           </nav>
         </div>
         <div className="site-header-right">
