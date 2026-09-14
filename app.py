@@ -539,6 +539,21 @@ def chart_page():
     return render_template("chart.html", symbols=symbols, indices=POPULAR_INDICES, symbol=symbol, bars=bars, unavailable=False)
 
 
+@app.get("/api/chart/bootstrap")
+def api_chart_bootstrap():
+    """Symbol-list + default-symbol resolution for the Chart page — was
+    only ever inline in chart_page() before; /api/chart/data (below)
+    still handles the actual bar data for a chosen symbol."""
+    try:
+        symbols = chart_connector.get_top_symbols_cached(limit=200)
+    except Exception:
+        app.logger.exception("chart symbol list fetch failed")
+        symbols = []
+    requested = _normalize_symbol(request.args.get("symbol")) if request.args.get("symbol") else None
+    default_symbol = requested or (symbols[0]["symbol"] if symbols else None)
+    return jsonify({"symbols": symbols, "indices": POPULAR_INDICES, "defaultSymbol": default_symbol})
+
+
 @app.get("/api/chart/data")
 def api_chart_data():
     symbol = _normalize_symbol(request.args.get("symbol"))

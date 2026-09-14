@@ -3,6 +3,7 @@ import AppShell from "./components/AppShell";
 import Home from "./pages/Home";
 import Capabilities from "./pages/Capabilities";
 import Scanner from "./pages/Scanner";
+import Chart from "./pages/Chart";
 import Callback from "./auth/Callback";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/capabilities" element={<Capabilities />} />
         <Route path="/scanner" element={<Scanner />} />
+        <Route path="/markets/chart" element={<Chart />} />
         {/* Every other route from the original app (News, Markets/*,
             Education, Pricing, Dashboard, Admin/*, ...) gets added here
             page-by-page in later phases of the rewrite plan. */}

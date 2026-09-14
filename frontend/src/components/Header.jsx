@@ -33,6 +33,9 @@ export default function Header() {
             <NavLink to="/scanner" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
               Scanner
             </NavLink>
+            <NavLink to="/markets/chart" className={({ isActive }) => "site-nav-link" + (isActive ? " active" : "")}>
+              Chart
+            </NavLink>
           </nav>
         </div>
         <div className="site-header-right">
