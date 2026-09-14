@@ -20,7 +20,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, jsonify, request, session
 
 import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
@@ -137,8 +137,10 @@ def _current_user():
 def _is_api_request():
     # An unauthenticated /api/* call (from the React SPA, or anything else
     # calling the JSON API directly) needs a real 401/403 JSON response —
-    # a redirect to the HTML /login page is a page-navigation concept that
-    # doesn't mean anything to a fetch() caller.
+    # Historical note: this used to branch page routes (HTML redirect) vs
+    # API routes (JSON error) — now that app.py is a pure JSON API (every
+    # remaining decorated route is under /api/*, the React SPA is the only
+    # frontend), login_required/role_required below always return JSON.
     return request.path.startswith("/api/")
 
 
@@ -146,38 +148,25 @@ def login_required(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
         if _current_user() is None:
-            if _is_api_request():
-                return jsonify({"error": "Not authenticated."}), 401
-            return redirect(url_for("login", next=request.path))
+            return jsonify({"error": "Not authenticated."}), 401
         return view(*args, **kwargs)
     return wrapped
 
 
 def role_required(*roles):
     """Like login_required, but also requires the signed-in user's role to
-    be one of `roles` — a wrong-role (but signed-in) user gets a 403 page
-    (or 403 JSON for an API call) rather than being bounced back to the
-    login form they already passed."""
+    be one of `roles` — a wrong-role (but signed-in) user gets 403."""
     def decorator(view):
         @functools.wraps(view)
         def wrapped(*args, **kwargs):
             user = _current_user()
             if user is None:
-                if _is_api_request():
-                    return jsonify({"error": "Not authenticated."}), 401
-                return redirect(url_for("login", next=request.path))
+                return jsonify({"error": "Not authenticated."}), 401
             if user["role"] not in roles:
-                if _is_api_request():
-                    return jsonify({"error": "Forbidden."}), 403
-                return render_template("access_denied.html"), 403
+                return jsonify({"error": "Forbidden."}), 403
             return view(*args, **kwargs)
         return wrapped
     return decorator
-
-
-@app.context_processor
-def inject_current_user():
-    return {"current_user": _current_user()}
 
 
 @app.get("/api/auth/me")
@@ -194,99 +183,24 @@ def api_auth_me():
     return jsonify({"email": user["email"], "name": user["name"], "role": user["role"], "plan": plan})
 
 
-@app.post("/api/auth/signup")
-def api_auth_signup():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-    name = (data.get("name") or "").strip()
-    if not email or not password or not name:
-        return jsonify({"error": "Name, email and password are required."}), 400
-    try:
-        cognito_connector.sign_up(email, password, name)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/auth/confirm")
-def api_auth_confirm():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    code = (data.get("code") or "").strip()
-    if not email or not code:
-        return jsonify({"error": "Enter the verification code."}), 400
-    try:
-        cognito_connector.confirm_sign_up(email, code)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/auth/resend-code")
-def api_auth_resend_code():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    if not email:
-        return jsonify({"error": "Email is required."}), 400
-    try:
-        cognito_connector.resend_confirmation_code(email)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/auth/login")
-def api_auth_login():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-    if not email or not password:
-        return jsonify({"error": "Email and password are required."}), 400
-    try:
-        tokens = cognito_connector.sign_in(email, password)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 401
-    _store_tokens(email, tokens)
-    next_path = data.get("next") or url_for("subscriber_dashboard")
-    return jsonify({"ok": True, "redirect": next_path})
-
-
-@app.post("/api/auth/logout")
-def api_auth_logout():
-    access_token = session.get("access_token")
-    if access_token:
-        cognito_connector.global_sign_out(access_token)
-    session.clear()
-    return jsonify({"ok": True, "redirect": url_for("login")})
-
-
-@app.post("/api/auth/forgot-password")
-def api_auth_forgot_password():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    if not email:
-        return jsonify({"error": "Email is required."}), 400
-    try:
-        cognito_connector.forgot_password(email)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
-
-
-@app.post("/api/auth/reset-password")
-def api_auth_reset_password():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    code = (data.get("code") or "").strip()
-    new_password = data.get("password") or ""
-    if not email or not code or not new_password:
-        return jsonify({"error": "All fields are required."}), 400
-    try:
-        cognito_connector.confirm_forgot_password(email, code, new_password)
-    except cognito_connector.AuthError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({"ok": True})
+# The legacy self-service auth endpoints that used to live here (signup,
+# confirm, resend-code, login, logout, forgot-password, reset-password —
+# all session-cookie-based) were removed once Cognito Hosted UI's PKCE
+# redirect flow (frontend/src/auth/pkce.js) was confirmed working
+# end-to-end across every phase of the rewrite: the SPA never calls any
+# of them (only GET /api/auth/me above), and they called url_for() on
+# page routes (login, subscriber_dashboard) that no longer exist now that
+# app.py is a pure JSON API. cognito_connector.sign_up/confirm_sign_up/
+# resend_confirmation_code/sign_in/forgot_password/confirm_forgot_
+# password still exist in the connector for admin-side use — only the
+# HTTP endpoints that exposed them directly to a browser are gone.
+#
+# _current_user_from_session()/_store_tokens() (see _current_user() above)
+# are effectively unreachable now too — nothing can ever populate a
+# session cookie since api_auth_login was the only thing that called
+# _store_tokens for a fresh login — left in place rather than removed in
+# this pass since they're harmless and _current_user() still falls back
+# to them safely (always None), but they're a known follow-up cleanup.
 
 
 # ============================================================
@@ -399,70 +313,18 @@ SCAN_CACHE_TTL_SECONDS = 5 * 60
 
 
 # ============================================================
-# PAGES
+# Page-rendering routes lived here through the rewrite (home, /scanner,
+# /news, /capabilities, /education, /pricing, /vision, /markets/ipo-hub) —
+# all removed once their React equivalents (frontend/src/pages/*) shipped
+# and were verified; app.py is a pure JSON API now. Their business logic
+# (news_connector/ipo_connector calls, mock_data-backed static content)
+# lives on in GET /api/news and GET /api/ipo-hub below; Home/Capabilities/
+# Education/Pricing/Vision were static-in-React from the start (see the
+# mock_data.py decision in the Phase 4 commit) so had no API equivalent
+# to begin with. /scanner's logic was trivial (validate ?id= against
+# SCANNERS) and is now just inline in the React Scanner page calling the
+# already-existing GET /api/scanners.
 # ============================================================
-
-@app.route("/")
-def home():
-    return render_template("home.html", **mock_data.home_data())
-
-
-@app.route("/scanner")
-def scanner_page():
-
-    selected_id = request.args.get("id", "")
-
-    if selected_id not in SCANNERS:
-        selected_id = ""
-
-    return render_template(
-        "scanner.html",
-        scanners=SCANNERS,
-        selected_id=selected_id,
-    )
-
-
-@app.route("/news")
-def news():
-    try:
-        data = news_connector.get_news_data()
-        # gainers/losers need a live quotes feed, not a news connector concern
-        data["gainers"] = mock_data.news_data()["gainers"]
-        data["losers"] = mock_data.news_data()["losers"]
-    except Exception:
-        app.logger.exception("news connector failed")
-        data = {"stories": [], "trending": [], "gainers": [], "losers": [], "unavailable": True}
-    return render_template("news.html", **data)
-
-
-@app.route("/capabilities")
-def capabilities():
-    return render_template("capabilities.html", **mock_data.capabilities_data())
-
-
-@app.route("/education")
-def education():
-    return render_template("education.html", **mock_data.education_data())
-
-
-@app.route("/pricing")
-def pricing():
-    return render_template("pricing.html", **mock_data.pricing_data())
-
-
-@app.route("/vision")
-def vision():
-    return render_template("vision.html", **mock_data.vision_data())
-
-
-@app.route("/markets/ipo-hub")
-def ipo_hub():
-    try:
-        data = ipo_connector.get_ipo_hub_data()
-    except Exception:
-        app.logger.exception("IPO connector failed")
-        data = {"ipos": [], "subCategories": [], "unavailable": True}
-    return render_template("ipo_hub.html", **data)
 
 
 def _normalize_symbol(raw):
@@ -472,74 +334,12 @@ def _normalize_symbol(raw):
     return (raw or "HDFCBANK").strip().upper().replace(" ", "")
 
 
-@app.route("/markets/research")
-def research():
-    symbol = _normalize_symbol(request.args.get("symbol"))
-    try:
-        data = fundamentals_connector.get_research_data(symbol)
-        # same screener.in page backs both, so this reads from cache rather
-        # than triggering a second fetch (see fundamentals_connector._get_raw)
-        data.update(fundamentals_connector.get_fundamentals_data(symbol))
-    except RuntimeError:
-        return render_template("research.html", symbol=symbol, not_found=True)
-    except Exception:
-        app.logger.exception("fundamentals connector failed for %s", symbol)
-        return render_template("research.html", symbol=symbol, unavailable=True)
-
-    try:
-        data.update(marketsmith_connector.get_strength_ratings(symbol))
-    except Exception:
-        # best-effort supplementary rating, not core to the page
-        app.logger.exception("marketsmith connector failed for %s", symbol)
-
-    try:
-        data["priceHistory"] = fundamentals_connector.get_price_history(symbol)
-    except Exception:
-        # best-effort — page works fine without the chart
-        app.logger.exception("price history fetch failed for %s", symbol)
-
-    try:
-        data["aiVerdict"] = ai_verdict.get_verdict(
-            symbol,
-            data.get("header", {}),
-            data.get("fundamentals", []),
-            data.get("ratios", []),
-            data.get("epsStrength"),
-            data.get("priceStrength"),
-        )
-    except Exception:
-        # best-effort — page works fine without the AI summary
-        app.logger.exception("AI verdict generation failed for %s", symbol)
-
-    return render_template("research.html", **data)
-
-
 POPULAR_INDICES = ["NIFTY 50", "BANK NIFTY", "SENSEX", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA"]
 
-
-@app.route("/markets/chart")
-def chart_page():
-    try:
-        symbols = chart_connector.get_top_symbols_cached(limit=200)
-    except Exception:
-        app.logger.exception("chart symbol list fetch failed")
-        symbols = []
-
-    requested = _normalize_symbol(request.args.get("symbol")) if request.args.get("symbol") else None
-    symbol = requested or (symbols[0]["symbol"] if symbols else None)
-
-    if symbol is None:
-        return render_template("chart.html", symbols=[], indices=POPULAR_INDICES, unavailable=True)
-
-    try:
-        bars = chart_connector.get_ohlcv(symbol)
-    except LookupError:
-        return render_template("chart.html", symbols=symbols, indices=POPULAR_INDICES, symbol=symbol, not_found=True, unavailable=False)
-    except Exception:
-        app.logger.exception("chart data fetch failed for %s", symbol)
-        return render_template("chart.html", symbols=symbols, indices=POPULAR_INDICES, symbol=symbol, unavailable=True)
-
-    return render_template("chart.html", symbols=symbols, indices=POPULAR_INDICES, symbol=symbol, bars=bars, unavailable=False)
+# The /markets/research and /markets/chart page routes that used to live
+# here were removed once their React equivalents shipped — their logic
+# now lives on in GET /api/research and GET /api/chart/bootstrap below
+# (which were written to mirror them exactly before this removal).
 
 
 @app.get("/api/news")
@@ -648,48 +448,11 @@ def api_chart_data():
     return jsonify({"symbol": symbol, "bars": bars})
 
 
-@app.route("/markets/chart-wall")
-def chart_wall_page():
-    try:
-        stocks = chart_connector.get_watchlist_stocks_cached()
-    except Exception:
-        app.logger.exception("chart wall stock list fetch failed")
-        stocks = []
-        unavailable = True
-    else:
-        unavailable = False
-
-    return render_template("chart_wall.html", stocks=stocks, unavailable=unavailable)
-
-
-@app.route("/login")
-def login():
-    if _current_user():
-        return redirect(url_for("subscriber_dashboard"))
-    return render_template("login.html", next_path=request.args.get("next") or "")
-
-
-@app.route("/payment")
-def payment():
-    # The old static fake-checkout page — real checkout now lives on
-    # /subscription (Razorpay Checkout.js opens as an overlay there, it
-    # isn't a separate page), so this just forwards old links/bookmarks.
-    return redirect(url_for("subscription_page"))
-
-
-@app.route("/subscription")
-@login_required
-def subscription_page():
-    user = _current_user()
-    sub = subscription_connector.get_subscription(user["email"])
-    return render_template(
-        "subscription.html",
-        subscription=sub,
-        plans=subscription_connector.PLANS,
-        visible_campaigns=subscription_connector.list_visible_campaigns(),
-        razorpay_configured=razorpay_connector.is_configured(),
-        razorpay_key_id=(secrets.get_parameter("/chartink-momentum-ai/razorpay/key_id") if razorpay_connector.is_configured() else None),
-    )
+# /markets/chart-wall, /login, /payment (a dead redirect even in the
+# original app — see the rewrite plan) and /subscription's page routes
+# were removed here — chart-wall's logic lives on in GET /api/watchlist,
+# subscription's in GET /api/subscription/bootstrap (both below), login
+# is Cognito Hosted UI now, and /payment had nowhere left to forward to.
 
 
 @app.get("/api/subscription/bootstrap")
@@ -1162,36 +925,6 @@ def _cached_member_since(email):
     return formatted
 
 
-@app.route("/dashboard")
-@login_required
-def subscriber_dashboard():
-    user = _current_user()
-    data = mock_data.subscriber_dashboard_data()
-    data["today"] = datetime.datetime.now(chart_connector.IST).strftime("%A, %d %b %Y")
-    data["marketStatus"] = _market_status()
-    data["watchlist"] = _dashboard_watchlist()
-    data["scanResults"] = _dashboard_scan_results()
-    data["educationCourses"] = [
-        c for c in mock_data.education_data()["courses"]
-        if c["title"] in ("Technical Analysis Foundations", "IPO Investing Playbook")
-    ]
-    try:
-        data["memberSince"] = _cached_member_since(user["email"])
-    except Exception:
-        data["memberSince"] = None
-    data["subscription"] = subscription_connector.get_subscription(user["email"])
-    data["recentAlerts"] = _dashboard_recent_alerts(data["subscription"]["plan"])
-    # Market indices/sector-momentum/breadth are NOT fetched here. Each
-    # one individually calls out to S3/Dhan per symbol (indices: 3 calls,
-    # sectors: 5, breadth: 30) — on a cold cache that's measured at
-    # several seconds up to ~75s for breadth alone, none of which should
-    # ever block the page load. They're loaded together, in parallel, from
-    # /api/dashboard/market-snapshot after the page renders instead (see
-    # the dashboard's own script) — same "render first, fill in the slow
-    # part after" pattern as the scanner pages' cached-vs-run split.
-    return render_template("subscriber_dashboard.html", **data)
-
-
 @app.get("/api/dashboard/bootstrap")
 @login_required
 def api_dashboard_bootstrap():
@@ -1249,17 +982,6 @@ def api_dashboard_market_snapshot():
     })
 
 
-ADMIN_NAV_ITEMS = [
-    {"label": "Overview", "endpoint": "admin_dashboard"},
-    {"label": "Users", "endpoint": "admin_users_page"},
-    {"label": "Subscriptions", "endpoint": "admin_subscriptions_page"},
-    {"label": "Voucher Campaigns", "endpoint": "admin_campaigns_page"},
-    {"label": "Scanner Campaign", "endpoint": "admin_scanner_campaign_page"},
-    {"label": "IPO Data", "endpoint": "ipo_hub"},
-    {"label": "Courses", "endpoint": "education"},
-]
-
-
 def _json_safe(obj):
     # Recursive version of _entry_json_safe's Decimal->float conversion,
     # for responses with nested dicts/lists (e.g. subscription bootstrap's
@@ -1293,30 +1015,11 @@ def _user_with_subscription(user):
     return user
 
 
-@app.route("/admin")
-@role_required("admin")
-def admin_dashboard():
-    users = cognito_connector.list_all_users()
-    stats = subscription_connector.compute_revenue_stats(len(users))
-    recent_users = [_user_with_subscription(dict(u)) for u in users[:6]]
-    admin_count = sum(1 for u in users if u["role"] == "admin")
-
-    return render_template(
-        "admin_dashboard.html",
-        nav_items=ADMIN_NAV_ITEMS,
-        active_admin_tab="Overview",
-        stats=stats,
-        recent_users=recent_users,
-        total_user_count=len(users),
-        admin_count=admin_count,
-    )
-
-
 @app.get("/api/admin/dashboard")
 @role_required("admin")
 def api_admin_dashboard():
-    """Mirrors admin_dashboard()'s exact logic — was only ever inline in
-    that render_template() call before."""
+    """Mirrors the logic the removed admin_dashboard() page route used to
+    do inline."""
     users = cognito_connector.list_all_users()
     stats = subscription_connector.compute_revenue_stats(len(users))
     admin_count = sum(1 for u in users if u["role"] == "admin")
@@ -1335,24 +1038,12 @@ def api_admin_dashboard():
     })
 
 
-@app.route("/admin/users")
-@role_required("admin")
-def admin_users_page():
-    users = [_user_with_subscription(dict(u)) for u in cognito_connector.list_all_users()]
-    return render_template(
-        "admin_users.html",
-        nav_items=ADMIN_NAV_ITEMS,
-        active_admin_tab="Users",
-        users=users,
-    )
-
-
 @app.get("/api/admin/users")
 @role_required("admin")
 def api_admin_users():
-    """Mirrors admin_users_page()'s _user_with_subscription() join — the
-    per-user mutation endpoints below (role/enabled/delete/create) were
-    already JSON and stay as-is."""
+    """Mirrors the join logic the removed admin_users_page() used to do
+    — the per-user mutation endpoints below (role/enabled/delete/create)
+    were already JSON and stay as-is."""
     users = []
     for u in cognito_connector.list_all_users():
         u = _user_with_subscription(dict(u))
@@ -1490,29 +1181,6 @@ def admin_users_export_csv():
     return response
 
 
-@app.route("/admin/subscriptions")
-@role_required("admin")
-def admin_subscriptions_page():
-    return render_template(
-        "admin_subscriptions.html",
-        nav_items=ADMIN_NAV_ITEMS,
-        active_admin_tab="Subscriptions",
-        subscriptions=subscription_connector.list_all_subscriptions(),
-    )
-
-
-@app.route("/admin/campaigns")
-@role_required("admin")
-def admin_campaigns_page():
-    return render_template(
-        "admin_campaigns.html",
-        nav_items=ADMIN_NAV_ITEMS,
-        active_admin_tab="Voucher Campaigns",
-        campaigns=subscription_connector.list_campaigns(),
-        plans=subscription_connector.PLANS,
-    )
-
-
 @app.get("/api/admin/subscriptions")
 @role_required("admin")
 def api_admin_subscriptions():
@@ -1563,53 +1231,6 @@ def api_admin_update_campaign(code):
 def api_admin_delete_campaign(code):
     subscription_connector.delete_campaign(code)
     return jsonify({"ok": True})
-
-
-@app.route("/admin/scanner-campaign")
-@role_required("admin")
-def admin_scanner_campaign_page():
-    scanner_results = {}
-    for scanner_id, scanner in SCANNERS.items():
-        entry = cache.peek(_scanner_cache_key(scanner_id))
-        scanner_results[scanner_id] = {
-            "name": scanner["name"],
-            "columns": entry["data"].get("columns", []) if entry else None,
-            "rows": entry["data"].get("rows", []) if entry else None,
-            "generated_at": (
-                datetime.datetime.fromtimestamp(entry["cached_at"]).strftime("%d %b, %I:%M %p") if entry else None
-            ),
-        }
-
-    templates = campaign_connector.list_templates()
-    if not templates:
-        # First-ever visit to this page (or every saved template has since
-        # been deleted) — seed a "Default" template from the values that
-        # used to just be hardcoded into the form, so there's always at
-        # least one real, loadable/deletable template instead of a blank
-        # dropdown, and the admin's existing message isn't lost by moving
-        # to a template system.
-        campaign_connector.create_template(
-            name="Default",
-            title="",
-            header="",
-            entry_line_template="{{symbol}} — Entry {{entry}}, SL {{sl}}, Target {{target}}",
-            footer="⚠️ This is for educational purposes only. Not a buy/sell recommendation. Trade at your own risk.",
-            created_by="system",
-        )
-        templates = campaign_connector.list_templates()
-
-    return render_template(
-        "admin_scanner_campaign.html",
-        nav_items=ADMIN_NAV_ITEMS,
-        active_admin_tab="Scanner Campaign",
-        scanners=SCANNERS,
-        scanner_results=scanner_results,
-        entries=campaign_connector.list_entries(),
-        notifications=campaign_connector.list_recent_notifications(),
-        templates=templates,
-        push_configured=fcm_connector.is_configured(),
-        push_token_count=len(campaign_connector.list_all_push_tokens()),
-    )
 
 
 @app.get("/api/admin/scanner-campaign/bootstrap")
