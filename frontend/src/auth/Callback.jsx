@@ -33,10 +33,28 @@ export default function Callback() {
       return;
     }
 
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
     exchangeCodeForTokens(cognitoConfig, code)
-      .then((tokens) => {
+      .then(async (tokens) => {
+        // /api/auth/me occasionally fails on the very first call right
+        // after a fresh login (e.g. a cold JWKS fetch server-side) —
+        // refreshCurrentUser() treats that like an invalid token and
+        // clears it, which would otherwise strand the user on a page
+        // that looks logged-out despite Cognito having just handed back
+        // good tokens. Re-store the same (real, freshly-issued) tokens
+        // before each retry so a transient failure doesn't get treated
+        // as a reason to give up on them.
         setTokens(tokens);
-        return refreshCurrentUser();
+        let signedIn = await refreshCurrentUser();
+        for (let attempt = 0; !signedIn && attempt < 2; attempt++) {
+          await sleep(500 * (attempt + 1));
+          setTokens(tokens);
+          signedIn = await refreshCurrentUser();
+        }
+        if (!signedIn) {
+          throw new Error("Signed in, but couldn't load your account. Please try again.");
+        }
       })
       .then(() => navigate("/", { replace: true }))
       .catch((err) => setError(err.message));

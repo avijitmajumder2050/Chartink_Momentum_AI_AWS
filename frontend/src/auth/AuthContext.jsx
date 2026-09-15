@@ -13,22 +13,29 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Returns whether it actually landed on a signed-in user — most callers
+  // (the mount-time check, a 401 elsewhere) don't care and can ignore it,
+  // but Callback.jsx uses it to retry a transient post-login failure
+  // instead of silently leaving the user looking logged-out despite
+  // already having valid tokens stored.
   const refreshCurrentUser = useCallback(async () => {
     if (!getTokens()) {
       setUser(null);
       setLoading(false);
-      return;
+      return false;
     }
     try {
       const response = await apiFetch("/api/auth/me");
       if (response.ok) {
         setUser(await response.json());
-      } else {
-        clearTokens();
-        setUser(null);
+        return true;
       }
+      clearTokens();
+      setUser(null);
+      return false;
     } catch {
       setUser(null);
+      return false;
     } finally {
       setLoading(false);
     }
