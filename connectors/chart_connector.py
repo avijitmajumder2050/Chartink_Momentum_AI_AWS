@@ -463,11 +463,52 @@ def _get_index_bars(security_id):
     return cache.get_or_fetch(key, OHLCV_CACHE_TTL_SECONDS, lambda: _fetch_index_bars(security_id))
 
 
+def _fetch_live_index_quotes_batch():
+    """One batched Dhan call for every index Dhan publishes, not one call
+    per index requested — the dashboard alone resolves ~6 market indices
+    + ~6 sector indices, each of which used to be its own separate
+    quote_data() round trip (_get_live_index_bar's old per-security_id
+    cache key) purely because whichever index happened to be resolved
+    first was the only one in that call's batch. Same fix as stocks
+    already got in _fetch_live_quotes_batch — quote every index the app
+    might ask about in one request, shared by every caller."""
+    security_ids = list(_get_index_master().values())
+    quotes = _get_quotes(security_ids, "IDX_I", max_retries=3)
+    if not quotes:
+        raise RuntimeError("no live index quotes returned")
+    return quotes
+
+
+_live_index_quotes_memory_cache = None  # (cached_at, data) — see _get_live_index_quotes_batch
+_live_index_quotes_lock = threading.Lock()
+
+
+def _get_live_index_quotes_batch():
+    # Same double-checked-locking shape as _get_live_quotes_batch() for
+    # stocks, including caching a failure too (not just a success) — see
+    # that function's comments for why both matter under concurrent load.
+    global _live_index_quotes_memory_cache
+    if _live_index_quotes_memory_cache is not None:
+        cached_at, data = _live_index_quotes_memory_cache
+        if time.time() - cached_at < LIVE_QUOTE_CACHE_TTL_SECONDS:
+            return data
+
+    with _live_index_quotes_lock:
+        if _live_index_quotes_memory_cache is not None:
+            cached_at, data = _live_index_quotes_memory_cache
+            if time.time() - cached_at < LIVE_QUOTE_CACHE_TTL_SECONDS:
+                return data
+
+        try:
+            data = cache.get_or_fetch("chart_live_index_quotes_batch", LIVE_QUOTE_CACHE_TTL_SECONDS, _fetch_live_index_quotes_batch)
+        except Exception:
+            data = None
+        _live_index_quotes_memory_cache = (time.time(), data)
+        return data
+
+
 def _get_live_index_bar(security_id):
-    key = f"chart_live_index_{security_id}"
-    quotes = cache.get_or_fetch(
-        key, LIVE_QUOTE_CACHE_TTL_SECONDS, lambda: _get_quotes([int(security_id)], "IDX_I", max_retries=7)
-    )
+    quotes = _get_live_index_quotes_batch()
     if not quotes:
         raise RuntimeError("no live index quote")
     return _live_bar_from_quote(quotes.get(str(security_id)))

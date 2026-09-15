@@ -862,7 +862,7 @@ def _dashboard_recent_alerts(plan, limit=3):
     return items[:limit]
 
 
-def _dashboard_watchlist(limit=10):
+def _fetch_dashboard_watchlist(limit=10):
     """Real top-RS-Rating watchlist stocks with real live price/change —
     not "holdings": this app has no brokerage integration, so there's no
     real owned-shares/portfolio-value data to show, and fabricating some
@@ -897,6 +897,16 @@ def _dashboard_watchlist(limit=10):
     with ThreadPoolExecutor(max_workers=max(1, len(ranked))) as pool:
         rows = list(pool.map(fetch_row, ranked))
     return [r for r in rows if r is not None]
+
+
+def _dashboard_watchlist(limit=10):
+    # Unlike _dashboard_watchlist_metrics() right below (cached 15 min),
+    # this ran fresh on every single /api/dashboard/bootstrap call — 10
+    # concurrent get_ohlcv() calls' worth of work paid on every dashboard
+    # load even back-to-back, instead of once per TTL window like the
+    # rest of the page. Same TTL as the market-snapshot metrics for
+    # consistency — both already tolerate quotes up to that stale.
+    return cache.get_or_fetch(f"dashboard_watchlist_{limit}", 15 * 60, lambda: _fetch_dashboard_watchlist(limit))
 
 
 def _dashboard_scan_results(limit=4):
