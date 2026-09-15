@@ -10,8 +10,11 @@ import "./ChartWall.css";
 // server-rendered page. Choices.js (a 3rd-party imperative multi-select
 // widget the original used for styling) is deliberately NOT ported —
 // it's another imperative-DOM-ownership library fighting React the same
-// way lightweight-charts does, and it's purely cosmetic; a plain native
-// <select multiple> gives the same filtering behavior without that.
+// way lightweight-charts does. The Setup Case filter first shipped as a
+// plain native <select multiple> instead, which does support multiple
+// selections but only via Ctrl/Cmd+click on a cramped list box — not
+// discoverable, and reported as "can't multi-select" — so it's since
+// been replaced with SetupMultiSelect, a small checkbox-dropdown below.
 
 const fv = (v) => (v == null ? "—" : Number(v).toFixed(2));
 
@@ -52,6 +55,63 @@ function loadFavorites() {
   } catch {
     return {};
   }
+}
+
+// Replaces a plain <select multiple> for the Setup Case filter — that
+// requires Ctrl/Cmd+click to pick more than one option and looks like a
+// cramped scrollable list box, which read as "can't multi-select" even
+// though it technically supported it. Checkboxes in a dropdown are the
+// standard, discoverable pattern for this.
+function SetupMultiSelect({ options, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
+
+  function toggle(opt) {
+    onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt]);
+  }
+
+  const label = !selected.length
+    ? "All setups"
+    : selected.length === options.length
+    ? "All setups"
+    : selected.length === 1
+    ? selected[0]
+    : `${selected.length} setups`;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" className="cw-ctrl-btn cw-setup-btn" onClick={() => setOpen((v) => !v)}>
+        <span>{label}</span>
+        <i className="fas fa-chevron-down" style={{ fontSize: 10 }} />
+      </button>
+      {open && (
+        <div className="cw-setup-popover">
+          <div className="cw-setup-popover-actions">
+            <button type="button" onClick={() => onChange([])}>Clear</button>
+            <button type="button" onClick={() => onChange(options)}>Select all</button>
+          </div>
+          {options.length === 0 ? (
+            <div className="cw-setup-popover-empty">No setups tagged yet.</div>
+          ) : (
+            options.map((opt) => (
+              <label key={opt} className="cw-setup-popover-item">
+                <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                {opt}
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ChartWall() {
@@ -278,14 +338,7 @@ export default function ChartWall() {
           <input className="cw-search-input" placeholder="Search symbol or setup…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
 
-        <select
-          multiple
-          className="cw-ctrl-select cw-setup-select"
-          value={selectedSetups}
-          onChange={(e) => setSelectedSetups(Array.from(e.target.selectedOptions, (o) => o.value))}
-        >
-          {setups.map((sc) => <option key={sc} value={sc}>{sc}</option>)}
-        </select>
+        <SetupMultiSelect options={setups} selected={selectedSetups} onChange={setSelectedSetups} />
 
         <select className="cw-ctrl-select" title="Columns" value={layoutCols} onChange={(e) => setLayoutCols(Number(e.target.value))}>
           <option value={1}>1 column</option>

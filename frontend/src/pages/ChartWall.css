@@ -23,6 +23,14 @@
 .cw-view-btn.active{ background:var(--primary); color:#fff }
 .cw-ctrl-btn{ padding:0 13px; height:36px; border:1px solid var(--border); border-radius:6px; background:var(--light-bg); color:var(--text-primary); cursor:pointer; font-size:13px; display:flex; align-items:center; gap:6px; transition:all .15s }
 .cw-ctrl-btn:hover{ border-color:var(--primary); color:var(--primary) }
+.cw-setup-btn{ justify-content:space-between; min-width:150px; max-width:220px }
+.cw-setup-popover{ position:absolute; top:calc(100% + 6px); left:0; z-index:150; min-width:200px; max-height:280px; overflow-y:auto; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; box-shadow:0 12px 28px rgba(20,23,31,.16); padding:8px }
+.cw-setup-popover-actions{ display:flex; gap:8px; padding:0 4px 8px; margin-bottom:6px; border-bottom:1px solid var(--border) }
+.cw-setup-popover-actions button{ background:none; border:none; padding:0; cursor:pointer; font-size:12px; font-weight:700; color:var(--primary) }
+.cw-setup-popover-item{ display:flex; align-items:center; gap:8px; padding:7px 6px; border-radius:6px; font-size:13px; cursor:pointer }
+.cw-setup-popover-item:hover{ background:var(--light-bg) }
+.cw-setup-popover-item input{ cursor:pointer; width:14px; height:14px; flex-shrink:0 }
+.cw-setup-popover-empty{ font-size:12.5px; color:var(--text-secondary); padding:8px 6px }
 .cw-ema-label{ font-size:13px; color:var(--text-secondary); display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap }
 .cw-ema-label input{ cursor:pointer; width:14px; height:14px }
 .cw-count-badge{ font-size:12px; background:rgba(70,64,222,.12); color:var(--primary); padding:3px 9px; border-radius:99px; white-space:nowrap }
@@ -81,7 +89,6 @@
   border-radius:0; margin:0; transform:none!important;
   box-shadow:none!important;
 }
-.cw-setup-select{ min-width:180px; max-width:260px }
 #cwToast{ position:fixed; bottom:22px; right:22px; background:#323232; color:#fff; padding:11px 18px; border-radius:8px; font-size:13px; z-index:9999; display:none; box-shadow:0 4px 14px rgba(0,0,0,.35) }
 #cwToast.show{ display:block; animation:cwFadeUp .25s ease }
 @keyframes cwFadeUp{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:none } }
