@@ -133,7 +133,7 @@ export default function Scanner() {
   const selectedScanner = scanners.find((s) => s.id === selectedId);
 
   return (
-    <div style={{ width: "100%", padding: "32px 48px 56px" }}>
+    <div style={{ width: "100%", padding: "32px clamp(16px, 5vw, 48px) 56px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 22, gap: 16, flexWrap: "wrap" }}>
           <div>

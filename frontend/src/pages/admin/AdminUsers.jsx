@@ -145,7 +145,7 @@ export default function AdminUsers() {
   if (users === null) return null;
 
   return (
-    <div style={{ padding: "30px 36px 60px" }}>
+    <div style={{ padding: "30px clamp(16px, 4vw, 36px) 60px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, flexWrap: "wrap", gap: 12 }}>
         <div>
           <span style={{ fontSize: 12, color: "#8A90A0" }}>{users.length} total</span>
@@ -177,7 +177,7 @@ export default function AdminUsers() {
       {showAddForm && (
         <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22, marginBottom: 20 }}>
           <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 14 }}>Add a user</span>
-          <form onSubmit={submitAddUser} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 14, alignItems: "end" }}>
+          <form onSubmit={submitAddUser} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, alignItems: "end" }}>
             <label>
               <span style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 5 }}>Full name</span>
               <input type="text" required value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} style={auInput} />
@@ -207,6 +207,7 @@ export default function AdminUsers() {
       )}
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, overflow: "hidden" }}>
+        <div className="table-wrap">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E3E6EC" }}>
@@ -268,6 +269,7 @@ export default function AdminUsers() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -74,7 +74,7 @@ export default function Capabilities() {
 
   return (
     <>
-      <div style={{ width: "100%", padding: "76px 48px 0", textAlign: "center" }}>
+      <div style={{ width: "100%", padding: "76px clamp(16px, 5vw, 48px) 0", textAlign: "center" }}>
         <div style={{ maxWidth: 680, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Capabilities</span>
           <h1 style={{ fontSize: 42, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>Everything Quantile does for Indian investors</h1>
@@ -84,11 +84,11 @@ export default function Capabilities() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "56px 48px 0" }}>
+      <div style={{ width: "100%", padding: "56px clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1140, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
           {categories.map((cat) => (
-            <div key={cat.title} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 20, padding: 36, display: "flex", gap: 40 }}>
-              <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div key={cat.title} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 20, padding: 36, display: "flex", flexWrap: "wrap", gap: 40 }}>
+              <div style={{ width: "min(300px, 100%)", flex: "1 0 240px", display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ width: 46, height: 46, borderRadius: 12, background: cat.iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: cat.iconColor }}>
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 17L8.5 10.5L12.5 14L19 5" />
@@ -101,7 +101,7 @@ export default function Capabilities() {
                 </div>
                 <p style={{ fontSize: 13.5, color: "#5B6270", lineHeight: 1.65, margin: 0 }}>{cat.desc}</p>
               </div>
-              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: "12px 24px", alignContent: "center" }}>
+              <div style={{ flex: "2 1 280px", minWidth: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px 24px", alignContent: "center" }}>
                 {cat.items.map((it) => (
                   <div key={it.title} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, marginTop: 2 }}>
@@ -120,8 +120,8 @@ export default function Capabilities() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "64px 48px 88px" }}>
-        <div style={{ maxWidth: 1140, margin: "0 auto", background: "#14171F", borderRadius: 20, padding: "44px 52px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 40 }}>
+      <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px) 88px" }}>
+        <div style={{ maxWidth: 1140, margin: "0 auto", background: "#14171F", borderRadius: 20, padding: "44px clamp(20px, 5vw, 52px)", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 24 }}>
           <div style={{ maxWidth: 480, display: "flex", flexDirection: "column", gap: 10 }}>
             <h2 style={{ color: "white", fontSize: 25, fontWeight: 800 }}>See every capability in your own workflow</h2>
             <p style={{ color: "#9297A8", fontSize: 14, lineHeight: 1.6, margin: 0 }}>Start on the free plan — no card required — and upgrade when you need real-time data and the full scanner.</p>

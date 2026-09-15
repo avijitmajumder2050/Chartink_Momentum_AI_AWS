@@ -47,8 +47,8 @@ export default function AdminDashboard() {
   const mixTotal = stats.plan_counts.free + stats.plan_counts.pro + stats.plan_counts.premium;
 
   return (
-    <div style={{ padding: "30px 36px 60px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26 }}>
+    <div style={{ padding: "30px clamp(16px, 4vw, 36px) 60px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26, flexWrap: "wrap", gap: 12 }}>
         <div>
           <span style={{ fontSize: 12, color: "#8A90A0" }}>Overview</span>
           <h1 style={{ fontSize: 24, fontWeight: 800, marginTop: 2 }}>Admin dashboard</h1>
@@ -60,7 +60,7 @@ export default function AdminDashboard() {
         </Link>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 16, marginBottom: 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 22 }}>
         <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: 18 }}>
           <span style={{ fontSize: 12, color: "#8A90A0" }}>Total users</span>
           <div className="num" style={{ fontSize: 22, fontWeight: 800, marginTop: 6 }}>{totalUserCount.toLocaleString("en-IN")}</div>

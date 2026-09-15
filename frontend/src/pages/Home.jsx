@@ -37,14 +37,14 @@ export default function Home() {
 
   return (
     <>
-      <div style={{ width: "100%", background: "linear-gradient(180deg, #F1F0FD 0%, #FAF9F6 62%)", padding: "88px 48px 72px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 64, alignItems: "center" }}>
-          <div style={{ flex: 1.1, display: "flex", flexDirection: "column", gap: 26 }}>
+      <div style={{ width: "100%", background: "linear-gradient(180deg, #F1F0FD 0%, #FAF9F6 62%)", padding: "88px clamp(16px, 5vw, 48px) 72px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexWrap: "wrap", gap: 40, alignItems: "center" }}>
+          <div style={{ flex: "1.1 1 320px", display: "flex", flexDirection: "column", gap: 26 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEEDFD", color: "#4640DE", fontSize: 13, fontWeight: 600, padding: "7px 14px", borderRadius: 100, width: "fit-content" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#17A673" }} />
               Live NSE &amp; BSE data
             </div>
-            <h1 style={{ fontSize: 54, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.02em", color: "#14171F" }}>
+            <h1 style={{ fontSize: "clamp(32px, 6vw, 54px)", lineHeight: 1.12, fontWeight: 800, letterSpacing: "-0.02em", color: "#14171F" }}>
               Research smarter.<br />Invest in Indian markets<br />with confidence.
             </h1>
             <p style={{ fontSize: 18, lineHeight: 1.65, color: "#5B6270", maxWidth: 480, margin: 0 }}>
@@ -99,7 +99,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ width: "100%", background: "#14171F", padding: "18px 48px" }}>
+      <div style={{ width: "100%", background: "#14171F", padding: "18px clamp(16px, 5vw, 48px)" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           {INDICES.map((idx) => (
             <div key={idx.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -111,13 +111,13 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "88px 48px", background: "#FAF9F6" }}>
+      <div style={{ width: "100%", padding: "88px clamp(16px, 5vw, 48px)", background: "#FAF9F6" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ maxWidth: 560, marginBottom: 48 }}>
             <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Everything in one place</span>
             <h2 style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.01em", marginTop: 10 }}>Five tools. One market view.</h2>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 20 }}>
             {FEATURES.map((f) => (
               <div key={f.title} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: f.iconBg, display: "flex", alignItems: "center", justifyContent: "center", color: f.iconColor }}>
@@ -139,14 +139,14 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "8px 48px 88px", background: "#FAF9F6" }}>
+      <div style={{ width: "100%", padding: "8px clamp(16px, 5vw, 48px) 88px", background: "#FAF9F6" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 20, padding: 48 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 40, flexWrap: "wrap" }}>
             <div style={{ maxWidth: 320 }}>
               <h2 style={{ fontSize: 28, fontWeight: 800 }}>Built for how Indian investors actually trade</h2>
               <p style={{ fontSize: 14.5, color: "#5B6270", lineHeight: 1.6, marginTop: 12 }}>Real NSE/BSE data, GMP tracking, and screeners tuned to Indian market structure — not a US product with rupee signs bolted on.</p>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 36, flex: 1 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 36, flex: 1 }}>
               {[["98.9%", "IPO GMP accuracy vs. listing day, last 40 IPOs"], ["< 200ms", "Exchange feed latency for NSE cash market data"], ["140+", "Video lessons across 6 course tracks"]].map(([n, l]) => (
                 <div key={l}>
                   <span style={{ fontFamily: "'Manrope', sans-serif", fontSize: 30, fontWeight: 800, color: "#4640DE" }}>{n}</span>
@@ -158,10 +158,10 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 88px" }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 88px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <h2 style={{ fontSize: 30, fontWeight: 800, marginBottom: 32 }}>Trusted by investors across India</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
             {TESTIMONIALS.map((t) => (
               <div key={t.name} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={{ display: "flex", gap: 3 }}>
@@ -183,8 +183,8 @@ export default function Home() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 88px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", background: "#14171F", borderRadius: 20, padding: "48px 56px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 88px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", background: "#14171F", borderRadius: 20, padding: "clamp(16px, 5vw, 48px) 56px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
           <div style={{ maxWidth: 480, display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={{ color: "#F2A93B", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Quantile Pro</span>
             <h2 style={{ color: "white", fontSize: 28, fontWeight: 800 }}>Unlock scanners, deep research &amp; live charts</h2>

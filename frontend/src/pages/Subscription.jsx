@@ -171,7 +171,7 @@ export default function Subscription() {
   const { subscription: sub, plans, campaigns, razorpay } = data;
 
   return (
-    <div style={{ width: "100%", padding: "48px 48px 90px" }}>
+    <div style={{ width: "100%", padding: "clamp(24px, 6vw, 48px) clamp(16px, 5vw, 48px) 90px" }}>
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ marginBottom: 28 }}>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Account</span>
@@ -237,7 +237,7 @@ export default function Subscription() {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 18 }}>
           {Object.entries(plans).map(([planId, plan]) => (
             <div key={planId} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div>

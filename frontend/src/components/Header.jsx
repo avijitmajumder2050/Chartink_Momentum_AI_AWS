@@ -66,16 +66,23 @@ export default function Header() {
   const { user, loading, login, logout } = useAuth();
   const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const dropdownRef = useRef(null);
 
   const marketsActive = MARKETS_PATHS.some((p) => location.pathname === p || location.pathname.startsWith(p + "?"));
 
+  const mobileNavRef = useRef(null);
+
   useEffect(() => {
     function onDocClick(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false);
+      if (mobileNavRef.current && !mobileNavRef.current.contains(e.target)) setMobileNavOpen(false);
     }
     function onKeyDown(e) {
-      if (e.key === "Escape") setDropdownOpen(false);
+      if (e.key === "Escape") {
+        setDropdownOpen(false);
+        setMobileNavOpen(false);
+      }
     }
     document.addEventListener("click", onDocClick);
     document.addEventListener("keydown", onKeyDown);
@@ -85,12 +92,19 @@ export default function Header() {
     };
   }, []);
 
+  // A route change (nav link tap, or the browser back/forward buttons)
+  // should always close the mobile menu — otherwise it stays open,
+  // covering the page you just navigated to.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   const navLinkClass = ({ isActive }) => "site-nav-link" + (isActive ? " active" : "");
 
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <div className="site-header-left">
+        <div className="site-header-left" ref={mobileNavRef}>
           <Link className="brand" to="/">
             <span className="brand-mark">
               <svg width="18" height="18" viewBox="0 0 30 30" fill="none">
@@ -100,7 +114,23 @@ export default function Header() {
             </span>
             Quantile
           </Link>
-          <nav className="site-nav">
+          <button
+            type="button"
+            className="site-nav-toggle"
+            aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileNavOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              setMobileNavOpen((v) => !v);
+            }}
+          >
+            {mobileNavOpen ? (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M5 5L17 17M17 5L5 17" /></svg>
+            ) : (
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 6H19M3 11H19M3 16H19" /></svg>
+            )}
+          </button>
+          <nav className={"site-nav" + (mobileNavOpen ? " mobile-open" : "")}>
             <NavLink to="/" className={navLinkClass} end>Home</NavLink>
             <NavLink to="/news" className={navLinkClass}>News</NavLink>
             <NavLink to="/capabilities" className={navLinkClass}>Capabilities</NavLink>

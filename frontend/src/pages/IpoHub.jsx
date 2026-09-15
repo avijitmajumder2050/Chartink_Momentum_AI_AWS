@@ -67,7 +67,7 @@ function IpoDetailsModal({ ipo, onClose }) {
             <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 100, marginLeft: 6, background: ipo.tagBg, color: ipo.tagColor }}>{ipo.tag}</span>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 16, padding: "16px 0", borderTop: "1px solid #F0F1F4", borderBottom: "1px solid #F0F1F4", marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 16, padding: "16px 0", borderTop: "1px solid #F0F1F4", borderBottom: "1px solid #F0F1F4", marginBottom: 16 }}>
           <div><span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>Price band</span><span className="num" style={{ fontSize: 14, fontWeight: 700 }}>{ipo.priceBand}</span></div>
           <div><span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>Lot size</span><span className="num" style={{ fontSize: 14, fontWeight: 700 }}>{ipo.lot}</span></div>
           <div><span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>GMP</span><span className="num" style={{ fontSize: 14, fontWeight: 700, color: "#17A673" }}>{ipo.gmp}</span></div>
@@ -126,7 +126,7 @@ export default function IpoHub() {
 
   return (
     <>
-      <div style={{ width: "100%", padding: "48px 48px 0" }}>
+      <div style={{ width: "100%", padding: "clamp(16px, 5vw, 48px) clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>IPO Hub</span>
@@ -159,14 +159,14 @@ export default function IpoHub() {
       </div>
 
       {unavailable ? (
-        <div style={{ width: "100%", padding: "64px 48px" }}>
-          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+        <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>Live IPO data temporarily unavailable</h2>
             <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach the IPO/GMP data source just now. Please try again shortly.</p>
           </div>
         </div>
       ) : (
-        <div style={{ width: "100%", padding: "24px 48px 0" }}>
+        <div style={{ width: "100%", padding: "24px clamp(16px, 5vw, 48px) 0" }}>
           <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             {activeGroup.length === 0 ? (
               <p style={{ color: "#8A90A0", fontSize: 14, padding: "24px 0" }}>No IPOs in this category right now.</p>

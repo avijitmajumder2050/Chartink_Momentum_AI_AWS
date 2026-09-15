@@ -162,7 +162,7 @@ export default function Dashboard() {
       : { background: "rgba(255,255,255,0.1)", color: "#9297A8" };
 
   return (
-    <div style={{ width: "100%", padding: "36px 40px 80px" }}>
+    <div style={{ width: "100%", padding: "clamp(20px, 5vw, 36px) clamp(16px, 4vw, 40px) 80px" }}>
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 26, flexWrap: "wrap", gap: 12 }}>
           <div>
@@ -257,7 +257,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: 14, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 14, marginBottom: 24 }}>
           {QUICK_NAV.map((q) => (
             <Link key={q.label} to={q.to} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: q.bg, display: "flex", alignItems: "center", justifyContent: "center", color: q.color, flexShrink: 0 }}>
@@ -270,8 +270,8 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-          <div style={{ flex: 1.6, display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" }}>
+          <div style={{ flex: "1.6 1 320px", display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ display: "flex", gap: 2, background: "#F0F1F4", borderRadius: 9, padding: 3 }}>
@@ -303,7 +303,7 @@ export default function Dashboard() {
                 <Link to="/scanner?id=dhan_ema_breakout" style={{ fontSize: 12.5, fontWeight: 700, color: "#4640DE" }}>Open scanner →</Link>
               </div>
               {data.scanResults && data.scanResults.rows && data.scanResults.rows.length ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
                   {data.scanResults.rows.map((s, i) => (
                     <div key={i} style={{ border: "1px solid #F0F1F4", borderRadius: 12, padding: 14 }}>
                       <span style={{ fontSize: 13, fontWeight: 700, display: "block" }}>{s["Stock Name"]}</span>
@@ -322,7 +322,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ width: "min(340px, 100%)", flex: "1 0 280px", display: "flex", flexDirection: "column", gap: 20 }}>
             <div style={{ background: "#14171F", borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#F2A93B", letterSpacing: "0.04em", textTransform: "uppercase" }}>Your account</span>

@@ -41,7 +41,7 @@ export default function AdminSubscriptions() {
   if (subscriptions === null) return null;
 
   return (
-    <div style={{ padding: "30px 36px 60px" }}>
+    <div style={{ padding: "30px clamp(16px, 4vw, 36px) 60px" }}>
       <div style={{ marginBottom: 22 }}>
         <span style={{ fontSize: 12, color: "#8A90A0" }}>{subscriptions.length} accounts with subscription history</span>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginTop: 2 }}>Subscriptions</h1>
@@ -49,6 +49,7 @@ export default function AdminSubscriptions() {
       </div>
 
       <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, overflow: "hidden" }}>
+        <div className="table-wrap">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E3E6EC" }}>
@@ -80,6 +81,7 @@ export default function AdminSubscriptions() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

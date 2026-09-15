@@ -103,7 +103,7 @@ export default function NotificationBell() {
         {unreadCount > 0 && <span style={{ position: "absolute", top: 4, right: 2, width: 8, height: 8, borderRadius: "50%", background: "#E0473F" }} />}
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 340, maxHeight: "min(70vh, 520px)", overflowY: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 32px rgba(20,23,31,0.14)", padding: 8, zIndex: 1000 }}>
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: "min(340px, 92vw)", maxHeight: "min(70vh, 520px)", overflowY: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 16px 32px rgba(20,23,31,0.14)", padding: 8, zIndex: 1000 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {!items.length ? (
               <div className="notif-card-empty">No notifications yet</div>

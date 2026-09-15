@@ -100,7 +100,7 @@ export default function AdminCampaigns() {
   if (campaigns === null) return null;
 
   return (
-    <div style={{ padding: "30px 36px 90px" }}>
+    <div style={{ padding: "30px clamp(16px, 4vw, 36px) 90px" }}>
       <div style={{ maxWidth: 1040 }}>
         <div style={{ marginBottom: 24 }}>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Admin</span>
@@ -118,7 +118,7 @@ export default function AdminCampaigns() {
 
         <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24, marginBottom: 28 }}>
           <span style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 16 }}>New campaign</span>
-          <form onSubmit={submitForm} style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 14, alignItems: "end" }}>
+          <form onSubmit={submitForm} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14, alignItems: "end" }}>
             <label style={{ gridColumn: "span 2" }}>
               <span style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 5 }}>Campaign name</span>
               <input type="text" required placeholder="e.g. Diwali 2026" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} />
@@ -159,6 +159,7 @@ export default function AdminCampaigns() {
         </div>
 
         <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, overflow: "hidden" }}>
+          <div className="table-wrap">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #E3E6EC" }}>
@@ -194,6 +195,7 @@ export default function AdminCampaigns() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

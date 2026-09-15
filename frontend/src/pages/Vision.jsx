@@ -24,7 +24,7 @@ const STATS = [
 export default function Vision() {
   return (
     <>
-      <div style={{ width: "100%", padding: "76px 48px 56px", textAlign: "center" }}>
+      <div style={{ width: "100%", padding: "76px clamp(16px, 5vw, 48px) 56px", textAlign: "center" }}>
         <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18, alignItems: "center" }}>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Our vision</span>
           <h1 style={{ fontSize: 44, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>A financially confident India, one investor at a time.</h1>
@@ -34,8 +34,8 @@ export default function Vision() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 72px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 20 }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 72px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
           <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: 34, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: 10, background: "#EEEDFD", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#4640DE" strokeWidth="1.7"><circle cx="10" cy="10" r="7" /><path d="M10 6v4l3 2" /></svg>
@@ -53,10 +53,10 @@ export default function Vision() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 80px" }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 80px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 32 }}>What we stand for</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 20 }}>
             {VALUES.map((v) => (
               <div key={v.num} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <span style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 800, fontSize: 26, color: "#D8DAE3" }}>{v.num}</span>
@@ -68,8 +68,8 @@ export default function Vision() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 80px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 20, padding: "40px 48px", display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 24 }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 80px" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 20, padding: "40px clamp(16px, 5vw, 48px)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 24 }}>
           {STATS.map(([n, l]) => (
             <div key={l} style={{ textAlign: "center" }}>
               <span style={{ fontFamily: "'Manrope', sans-serif", fontSize: 28, fontWeight: 800, color: "#4640DE" }}>{n}</span>
@@ -79,7 +79,7 @@ export default function Vision() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "0 48px 90px" }}>
+      <div style={{ width: "100%", padding: "0 clamp(16px, 5vw, 48px) 90px" }}>
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 40, textAlign: "center" }}>How we got here</h2>
           <div style={{ display: "flex", flexDirection: "column" }}>

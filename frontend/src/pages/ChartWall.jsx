@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api/client";
 import StockCard from "./StockCard";
+import useIsMobile from "../hooks/useIsMobile";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./ChartWall.css";
 
@@ -129,6 +130,7 @@ export default function ChartWall() {
 
   const [view, setView] = useState("card");
   const [layoutCols, setLayoutCols] = useState(2);
+  const isMobile = useIsMobile();
   const [pageSize, setPageSize] = useState(50);
   const [chartHeight, setChartHeight] = useState(440);
   const [page, setPage] = useState(1);
@@ -321,8 +323,8 @@ export default function ChartWall() {
 
   if (unavailable) {
     return (
-      <div style={{ width: "100%", padding: "64px 48px" }}>
-        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+      <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px clamp(16px, 5vw, 36px)" }}>
           <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>Watchlist temporarily unavailable</h2>
           <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach the watchlist data source just now. Please try again shortly.</p>
         </div>
@@ -397,7 +399,7 @@ export default function ChartWall() {
       </div>
 
       {view === "card" ? (
-        <div className="cw-card-grid" style={{ gridTemplateColumns: `repeat(${layoutCols}, 1fr)` }}>
+        <div className="cw-card-grid" style={{ gridTemplateColumns: isMobile ? "1fr" : `repeat(${layoutCols}, 1fr)` }}>
           {!pageSlice.length ? (
             <div style={{ padding: 60, textAlign: "center", color: "var(--text-secondary)", gridColumn: "1/-1" }}>No stocks match your filters.</div>
           ) : (

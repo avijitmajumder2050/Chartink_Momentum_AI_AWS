@@ -136,8 +136,8 @@ export default function Chart() {
 
   if (bootstrap && !symbol) {
     return (
-      <div style={{ width: "100%", padding: "64px 48px" }}>
-        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+      <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+        <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
           <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>Chart data temporarily unavailable</h2>
           <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach the chart data source just now. Please try again shortly.</p>
         </div>
@@ -152,7 +152,7 @@ export default function Chart() {
 
   return (
     <>
-      <div style={{ width: "100%", padding: "20px 24px 0" }}>
+      <div style={{ width: "100%", padding: "20px clamp(12px, 4vw, 24px) 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
           <form
             onSubmit={onSearchSubmit}
@@ -194,15 +194,15 @@ export default function Chart() {
       </div>
 
       {unavailable ? (
-        <div style={{ width: "100%", padding: "64px 48px" }}>
-          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+        <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>Chart data temporarily unavailable</h2>
             <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach the chart data source just now. Please try again shortly.</p>
           </div>
         </div>
       ) : notFound ? (
-        <div style={{ width: "100%", padding: "64px 48px" }}>
-          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+        <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>No chart data for "{symbol}"</h2>
             <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>
               We couldn't find that symbol in the watchlist or on NSE. Try the exact exchange symbol, e.g. <strong>TCS</strong>, <strong>INFY</strong>, <strong>RELIANCE</strong>.
@@ -210,8 +210,8 @@ export default function Chart() {
           </div>
         </div>
       ) : (
-        <div style={{ width: "100%", padding: "12px 24px 20px", display: "flex", gap: 18, alignItems: "flex-start" }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        <div style={{ width: "100%", padding: "12px clamp(12px, 4vw, 24px) 20px", display: "flex", flexWrap: "wrap", gap: 18, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 320px", display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: "14px 18px" }}>
               <span style={{ fontSize: 15, fontWeight: 700, display: "block", lineHeight: 1.1 }}>{symbol}</span>
               <span className="num" style={{ fontSize: 12, color: "#8A90A0", fontWeight: 600 }}>
@@ -244,7 +244,7 @@ export default function Chart() {
             </div>
           </div>
 
-          <div style={{ width: 280, flexShrink: 0, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 4, maxHeight: 640, overflowY: "auto" }}>
+          <div style={{ width: "min(280px, 100%)", flex: "1 0 240px", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 4, maxHeight: 640, overflowY: "auto" }}>
             <span style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Momentum watchlist</span>
             <span style={{ fontSize: 11, color: "#8A90A0", marginBottom: 10 }}>Sorted by RS Rating</span>
             {symbols.map((s) => (

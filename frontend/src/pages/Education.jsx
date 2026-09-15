@@ -27,7 +27,7 @@ const WEBINARS = [
 export default function Education() {
   return (
     <>
-      <div style={{ width: "100%", padding: "56px 48px 0" }}>
+      <div style={{ width: "100%", padding: "56px clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
           <div>
             <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Education</span>
@@ -43,8 +43,8 @@ export default function Education() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "28px 48px 0" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 20 }}>
+      <div style={{ width: "100%", padding: "28px clamp(16px, 5vw, 48px) 0" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
           {COURSES.map((c) => (
             <div key={c.title} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <div style={{ height: 110, background: c.bannerBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -64,7 +64,7 @@ export default function Education() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "64px 48px 0" }}>
+      <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 18 }}>Course detail — Technical Analysis Foundations</h2>
           <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: 36, display: "flex", gap: 44, flexWrap: "wrap" }}>
@@ -104,13 +104,13 @@ export default function Education() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "64px 48px 88px" }}>
+      <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px) 88px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
             <h2 style={{ fontSize: 24, fontWeight: 800 }}>Live &amp; upcoming webinars</h2>
             <span style={{ fontSize: 13.5, fontWeight: 700, color: "#4640DE" }}>View full calendar →</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
             {WEBINARS.map((w) => (
               <div key={w.title} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

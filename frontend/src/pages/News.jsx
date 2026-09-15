@@ -22,7 +22,7 @@ export default function News() {
 
   return (
     <>
-      <div style={{ width: "100%", padding: "48px 48px 0" }}>
+      <div style={{ width: "100%", padding: "clamp(16px, 5vw, 48px) clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>News</span>
@@ -37,11 +37,11 @@ export default function News() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "28px 48px 0" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 24, alignItems: "flex-start" }}>
-          <div style={{ flex: 1.7, display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ width: "100%", padding: "28px clamp(16px, 5vw, 48px) 0" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
+          <div style={{ flex: "1.7 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
             {unavailable ? (
-              <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px", textAlign: "center" }}>
+              <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px", textAlign: "center" }}>
                 <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>News feed temporarily unavailable</h2>
                 <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach any of our news sources just now. Please try again shortly.</p>
               </div>
@@ -73,7 +73,7 @@ export default function News() {
             )}
           </div>
 
-          <div style={{ width: 320, flexShrink: 0, display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ width: "min(320px, 100%)", flex: "1 0 260px", display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
               <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 14 }}>Trending now</span>
               {trending.map((t, i) => (

@@ -529,7 +529,7 @@ export default function AdminScannerCampaign() {
   }
 
   return (
-    <div style={{ padding: "30px 36px 80px", maxWidth: 1200 }}>
+    <div style={{ padding: "30px clamp(16px, 4vw, 36px) 80px", maxWidth: 1200 }}>
       <div style={{ marginBottom: 22 }}>
         <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Admin</span>
         <h1 style={{ fontSize: 24, fontWeight: 800, marginTop: 6 }}>Scanner campaign</h1>
@@ -564,6 +564,7 @@ export default function AdminScannerCampaign() {
             {!res || !res.rows?.length ? (
               <p style={{ fontSize: 12.5, color: "#8A90A0", margin: "6px 0 0" }}>No cached result — click "Run scanner".</p>
             ) : (
+              <div className="table-wrap">
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
@@ -592,6 +593,7 @@ export default function AdminScannerCampaign() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         );
@@ -646,7 +648,7 @@ export default function AdminScannerCampaign() {
         </div>
 
         {addFormOpen && (
-          <form onSubmit={submitAddForm} style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0,1fr))", gap: 10, alignItems: "end", marginBottom: 16, padding: 14, background: "#FAF9F6", borderRadius: 10 }}>
+          <form onSubmit={submitAddForm} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, alignItems: "end", marginBottom: 16, padding: 14, background: "#FAF9F6", borderRadius: 10 }}>
             <label><span style={{ fontSize: 11.5, fontWeight: 600, display: "block", marginBottom: 4 }}>Symbol</span>
               <input type="text" required value={addForm.symbol} onChange={(e) => setAddForm((f) => ({ ...f, symbol: e.target.value.toUpperCase() }))} style={{ ...inputStyle, width: "100%" }} />
             </label>
@@ -674,6 +676,7 @@ export default function AdminScannerCampaign() {
         )}
 
         <p style={{ fontSize: 11.5, color: "#8A90A0", margin: "0 0 10px" }}>Check the stocks you want in the campaign message — feeds the Campaign text builder below, same selection as the Alert tracker card.</p>
+        <div className="table-wrap">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E3E6EC" }}>
@@ -717,6 +720,7 @@ export default function AdminScannerCampaign() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* ALERT TRACKER */}
@@ -892,6 +896,7 @@ export default function AdminScannerCampaign() {
           <span style={{ fontSize: 14.5, fontWeight: 700 }}>Recent campaigns</span>
           <button type="button" disabled={!notificationsSelected.size} onClick={deleteSelectedNotifications} style={{ background: "#FCEBEA", color: "#E0473F", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: notificationsSelected.size ? 1 : 0.5 }}>Delete selected</button>
         </div>
+        <div className="table-wrap">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E3E6EC" }}>
@@ -924,6 +929,7 @@ export default function AdminScannerCampaign() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

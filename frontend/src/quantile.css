@@ -46,6 +46,7 @@ a:hover { color: var(--accent-hover); }
   width: 100%;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
+  position: relative;
 }
 
 .site-header-inner {
@@ -54,6 +55,16 @@ a:hover { color: var(--accent-hover); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.site-nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  color: var(--text);
+  flex-shrink: 0;
 }
 
 .site-header-left {
@@ -277,6 +288,79 @@ a:hover { color: var(--accent-hover); }
   align-items: center;
   color: #6B7080;
   font-size: 12.5px;
+}
+
+/* ---------------- RESPONSIVE (site chrome) ---------------- */
+/* Every page's own content used inline styles for layout (not CSS
+   classes), so they can't be reached by a stylesheet media query —
+   see the page-level mobile fixes for those, done in JS via
+   useIsMobile() instead. This block only covers the header/footer,
+   which already used real classes. */
+
+@media (max-width: 900px) {
+  .site-header-inner { padding: 0 16px; height: 60px; }
+  .brand { font-size: 17px; gap: 8px; }
+  .brand-mark { width: 26px; height: 26px; }
+
+  .site-nav-toggle { display: flex; align-items: center; justify-content: center; }
+
+  .site-header-left { gap: 10px; }
+
+  .site-nav {
+    display: none;
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 20px 18px;
+    box-shadow: 0 16px 28px rgba(20,23,31,0.1);
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    z-index: 1000;
+  }
+  .site-nav.mobile-open { display: flex; }
+
+  .site-nav-link {
+    padding: 13px 0;
+    border-bottom: 1px solid var(--surface-2);
+    width: 100%;
+  }
+
+  .site-nav-dropdown { width: 100%; }
+  .site-nav-dropdown-trigger {
+    width: 100%;
+    justify-content: space-between;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--surface-2);
+  }
+  .site-nav-dropdown-menu {
+    position: static;
+    box-shadow: none;
+    padding-top: 0;
+    z-index: auto;
+  }
+  .site-nav-dropdown.open .site-nav-dropdown-menu-inner {
+    border: none;
+    padding: 0 0 6px 14px;
+  }
+
+  .site-cta-btn { display: none; }
+
+  .site-footer { padding: 40px 20px 24px; }
+  .site-footer-top { flex-direction: column; gap: 28px; }
+  .site-footer-brand { max-width: none; }
+  .site-footer-cols { flex-wrap: wrap; gap: 32px; }
+  .site-footer-legal-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+@media (max-width: 480px) {
+  .site-header-inner { padding: 0 14px; }
+  .site-login-link { padding: 8px 10px; font-size: 13.5px; }
 }
 
 /* ---------------- LAYOUT ---------------- */

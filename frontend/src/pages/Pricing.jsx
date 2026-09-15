@@ -41,7 +41,7 @@ const FAQS = [
 export default function Pricing() {
   return (
     <>
-      <div style={{ width: "100%", padding: "72px 48px 0", textAlign: "center" }}>
+      <div style={{ width: "100%", padding: "72px clamp(16px, 5vw, 48px) 0", textAlign: "center" }}>
         <div style={{ maxWidth: 620, margin: "0 auto", display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Pricing</span>
           <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-0.02em" }}>Plans for every stage of investing</h1>
@@ -55,8 +55,8 @@ export default function Pricing() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "44px 48px 0" }}>
-        <div style={{ maxWidth: 1120, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 20, alignItems: "start" }}>
+      <div style={{ width: "100%", padding: "44px clamp(16px, 5vw, 48px) 0" }}>
+        <div style={{ maxWidth: 1120, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20, alignItems: "start" }}>
           {PLANS.map((p) => (
             <div key={p.name} style={{ background: p.cardBg, border: p.border, borderRadius: 20, padding: 32, display: "flex", flexDirection: "column", gap: 18, position: "relative" }}>
               {p.featured && (
@@ -86,7 +86,7 @@ export default function Pricing() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "80px 48px 0" }}>
+      <div style={{ width: "100%", padding: "80px clamp(16px, 5vw, 48px) 0" }}>
         <div style={{ maxWidth: 1120, margin: "0 auto" }}>
           <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 22 }}>Compare all features</h2>
           <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, overflow: "hidden" }}>
@@ -108,7 +108,7 @@ export default function Pricing() {
         </div>
       </div>
 
-      <div style={{ width: "100%", padding: "72px 48px 88px" }}>
+      <div style={{ width: "100%", padding: "72px clamp(16px, 5vw, 48px) 88px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto" }}>
           <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 26, textAlign: "center" }}>Frequently asked questions</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

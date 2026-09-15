@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import useIsMobile from "../hooks/useIsMobile";
 
 // Ported from templates/_admin_sidebar.html. NAV_ITEMS mirrors
 // app.py's ADMIN_NAV_ITEMS, with React paths instead of Flask endpoint
@@ -16,6 +17,34 @@ const NAV_ITEMS = [
 
 export default function AdminSidebar() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+
+  // A 232px full-height vertical block works fine next to content on
+  // desktop, but on a phone it either eats the whole screen (if kept
+  // full-height) or squeezes the page into a sliver (if kept full-width
+  // AND full-height side by side) — collapse to a horizontal
+  // scrollable tab strip instead, same nav items, no page/user footer.
+  if (isMobile) {
+    return (
+      <div style={{ background: "#14171F", padding: "10px 12px", display: "flex", gap: 6, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        {NAV_ITEMS.map((n) => (
+          <NavLink
+            key={n.to}
+            to={n.to}
+            end={n.end}
+            style={({ isActive }) => ({
+              display: "flex", alignItems: "center", padding: "8px 14px", borderRadius: 8,
+              background: isActive ? "#1F2330" : "transparent", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0,
+            })}
+          >
+            {({ isActive }) => (
+              <span style={{ fontSize: 12.5, fontWeight: isActive ? 700 : 500, color: isActive ? "#FFFFFF" : "#9297A8" }}>{n.label}</span>
+            )}
+          </NavLink>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: 232, flexShrink: 0, background: "#14171F", minHeight: "100vh", padding: "22px 16px", display: "flex", flexDirection: "column", gap: 4 }}>

@@ -106,7 +106,7 @@ export default function Research() {
 
   return (
     <>
-      <div style={{ width: "100%", padding: "40px 48px 0" }}>
+      <div style={{ width: "100%", padding: "40px clamp(16px, 5vw, 48px) 0" }}>
         <form
           onSubmit={onSearchSubmit}
           style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: "1.5px solid #E3E6EC", borderRadius: 12, padding: "14px 20px" }}
@@ -129,8 +129,8 @@ export default function Research() {
       </div>
 
       {!data ? null : data.notFound ? (
-        <div style={{ width: "100%", padding: "64px 48px" }}>
-          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+        <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>No match for "{symbol}"</h2>
             <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>
               We couldn't find that ticker on NSE/BSE. Try the exchange symbol without spaces — e.g. <strong>HDFCBANK</strong>, <strong>TATASTEEL</strong>, <strong>TCS</strong> or <strong>INFY</strong>.
@@ -138,17 +138,17 @@ export default function Research() {
           </div>
         </div>
       ) : data.unavailable ? (
-        <div style={{ width: "100%", padding: "64px 48px" }}>
-          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "48px 36px" }}>
+        <div style={{ width: "100%", padding: "64px clamp(16px, 5vw, 48px)" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", textAlign: "center", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: "clamp(16px, 5vw, 48px) 36px" }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 8px" }}>Live data temporarily unavailable</h2>
             <p style={{ fontSize: 14, color: "#5B6270", lineHeight: 1.6, margin: 0 }}>We couldn't reach the data source for {symbol} just now. Please try again shortly.</p>
           </div>
         </div>
       ) : (
         <>
-          <div style={{ width: "100%", padding: "20px 48px 0" }}>
+          <div style={{ width: "100%", padding: "20px clamp(16px, 5vw, 48px) 0" }}>
             <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-              <div ref={sectionRefs.overview} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div ref={sectionRefs.overview} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
                 <div style={{ display: "flex", gap: 16 }}>
                   <div style={{ width: 54, height: 54, borderRadius: 14, background: "#003D7A", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: 15 }}>
                     {data.header?.initials}
@@ -192,7 +192,7 @@ export default function Research() {
             </div>
           </div>
 
-          <div style={{ width: "100%", padding: "20px 48px 0" }}>
+          <div style={{ width: "100%", padding: "20px clamp(16px, 5vw, 48px) 0" }}>
             <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 20, alignItems: "flex-start" }}>
               <div style={{ flex: 1.6, display: "flex", flexDirection: "column", gap: 18 }}>
                 {data.aiVerdict && (
@@ -231,7 +231,7 @@ export default function Research() {
 
                 <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 18, padding: 26 }}>
                   <h3 style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 18 }}>Key ratios</h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "22px 18px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "22px 18px" }}>
                     {(data.fundamentals || []).map((f, i) => (
                       <div key={i}>
                         <span style={{ fontSize: 12, color: "#8A90A0", display: "block", marginBottom: 4 }}>{f.label}</span>
