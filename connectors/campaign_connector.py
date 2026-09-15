@@ -101,6 +101,15 @@ def create_entry(symbol, entry_price, sl_price, target_price, note, source, crea
     if not symbol:
         raise CampaignError("A stock symbol is required.")
 
+    # Nothing enforced this before — the same symbol could be added twice
+    # (a re-run scanner result, the manual form, an AI pick already added
+    # elsewhere), and every downstream view keyed off entry id rather than
+    # symbol, so duplicates surfaced as the same stock appearing twice in
+    # the Alert tracker, and could double-fire the alert bot's milestone
+    # notifications to subscribers.
+    if any(i.get("symbol") == symbol for i in list_entries(active_only=True)):
+        raise CampaignError(f"{symbol} is already in your campaign entries.")
+
     now_iso = datetime.datetime.utcnow().isoformat()
     item = {
         "id": uuid.uuid4().hex,

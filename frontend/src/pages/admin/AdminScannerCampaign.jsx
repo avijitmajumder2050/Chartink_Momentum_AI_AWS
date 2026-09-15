@@ -223,7 +223,11 @@ export default function AdminScannerCampaign() {
 
   // ---- Alert tracker ----
   const [tracker, setTracker] = useState([]);
-  const [trackerSelected, setTrackerSelected] = useState(() => new Set());
+  // Shared between the Campaign entries table and the Alert tracker card
+  // below — both list the same underlying entries (by id), just with
+  // different columns, and either one's checkboxes feed the Campaign
+  // text builder further down the page.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const trackerByIdRef = useRef({});
 
   const loadTracker = useCallback(() => {
@@ -231,7 +235,7 @@ export default function AdminScannerCampaign() {
       const list = data.entries || [];
       trackerByIdRef.current = Object.fromEntries(list.map((e) => [e.id, e]));
       setTracker(list);
-      setTrackerSelected((prev) => new Set([...prev].filter((id) => list.some((e) => e.id === id))));
+      setSelectedIds((prev) => new Set([...prev].filter((id) => list.some((e) => e.id === id))));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -242,8 +246,8 @@ export default function AdminScannerCampaign() {
     return () => clearInterval(t);
   }, [loadTracker]);
 
-  function toggleTrackerSelected(id) {
-    setTrackerSelected((prev) => {
+  function toggleSelected(id) {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -252,11 +256,15 @@ export default function AdminScannerCampaign() {
   }
 
   function toggleTrackerSelectAll(checked) {
-    setTrackerSelected(checked ? new Set(tracker.map((e) => e.id)) : new Set());
+    setSelectedIds(checked ? new Set(tracker.map((e) => e.id)) : new Set());
+  }
+
+  function toggleEntriesSelectAll(checked) {
+    setSelectedIds(checked ? new Set(entries.map((e) => e.id)) : new Set());
   }
 
   function deleteSelectedTracked() {
-    const rows = tracker.filter((e) => trackerSelected.has(e.id));
+    const rows = tracker.filter((e) => selectedIds.has(e.id));
     if (!rows.length) return;
     if (!window.confirm(`Stop tracking ${rows.length} stock(s) (${rows.map((r) => r.symbol).join(", ")})? This removes them from campaign entries too.`)) return;
 
@@ -264,7 +272,7 @@ export default function AdminScannerCampaign() {
       const failed = results.filter((r) => !r.ok).length;
       const ids = new Set(rows.map((r) => r.id));
       setEntries((prev) => prev.filter((e) => !ids.has(e.id)));
-      setTrackerSelected(new Set());
+      setSelectedIds(new Set());
       loadTracker();
       showMessage(failed ? `${failed} couldn't be removed.` : `Stopped tracking ${rows.length} stock(s).`, !!failed);
     });
@@ -344,12 +352,12 @@ export default function AdminScannerCampaign() {
     }
   }, [templates]);
 
-  // selectedEntries(): reads CHECKED Alert tracker rows — that card, not
-  // Campaign entries, drives what goes into a campaign message (see the
-  // rewrite plan / earlier session decision on this).
+  // selectedEntries(): reads checked rows by id — checkable from either
+  // the Campaign entries table or the Alert tracker card, both keyed to
+  // the same entry ids — and drives what goes into a campaign message.
   const selectedEntries = useMemo(() => {
     return tracker
-      .filter((t) => trackerSelected.has(t.id))
+      .filter((t) => selectedIds.has(t.id))
       .map((t) => {
         const entryRow = entries.find((e) => e.id === t.id);
         const symbol = t.symbol;
@@ -366,7 +374,7 @@ export default function AdminScannerCampaign() {
           milestones: milestonesSummaryText(t.milestonesReached),
         };
       });
-  }, [tracker, trackerSelected, entries]);
+  }, [tracker, selectedIds, entries]);
 
   const autoFillTemplateDefaults = useCallback(() => {
     const types = selectedEntries.map((e) => e.type).filter(Boolean);
@@ -665,9 +673,13 @@ export default function AdminScannerCampaign() {
           </form>
         )}
 
+        <p style={{ fontSize: 11.5, color: "#8A90A0", margin: "0 0 10px" }}>Check the stocks you want in the campaign message — feeds the Campaign text builder below, same selection as the Alert tracker card.</p>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E3E6EC" }}>
+              <th style={{ padding: "8px 10px", width: 28 }}>
+                <input type="checkbox" checked={entries.length > 0 && entries.every((e) => selectedIds.has(e.id))} onChange={(ev) => toggleEntriesSelectAll(ev.target.checked)} />
+              </th>
               {["Symbol", "Type", "Entry", "SL", "Target", "Note", "Source", ""].map((h) => (
                 <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#8A90A0", textTransform: "uppercase", textAlign: "left" }}>{h}</th>
               ))}
@@ -675,10 +687,13 @@ export default function AdminScannerCampaign() {
           </thead>
           <tbody>
             {!entries.length ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: "center", fontSize: 13, color: "#8A90A0" }}>No entries yet — add one manually or from a scanner result above.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: "center", fontSize: 13, color: "#8A90A0" }}>No entries yet — add one manually or from a scanner result above.</td></tr>
             ) : (
               entries.map((e) => (
                 <tr key={e.id} style={{ borderBottom: "1px solid #F0F1F4" }}>
+                  <td style={{ padding: "8px 10px" }}>
+                    <input type="checkbox" checked={selectedIds.has(e.id)} onChange={() => toggleSelected(e.id)} />
+                  </td>
                   <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>
                     <a className="symbol-link" href={`/markets/chart?symbol=${encodeURIComponent(e.symbol)}`} target="_blank" rel="noopener noreferrer" onClick={(ev) => onSymbolClick(ev, e.symbol)}>{e.symbol}</a>
                   </td>
@@ -709,13 +724,13 @@ export default function AdminScannerCampaign() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 14.5, fontWeight: 700 }}>🎯 Alert tracker</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button type="button" disabled={!trackerSelected.size} onClick={deleteSelectedTracked} style={{ background: "#FCEBEA", color: "#E0473F", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: trackerSelected.size ? 1 : 0.5 }}>Delete selected</button>
+            <button type="button" disabled={!selectedIds.size} onClick={deleteSelectedTracked} style={{ background: "#FCEBEA", color: "#E0473F", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: selectedIds.size ? 1 : 0.5 }}>Delete selected</button>
             <button type="button" onClick={loadTracker} style={{ border: "1.5px solid #E3E6EC", background: "#FFFFFF", borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Refresh</button>
           </div>
         </div>
-        <p style={{ fontSize: 12, color: "#8A90A0", margin: "4px 0 14px" }}>Live milestone status for every active entry — the bot auto-notifies Pro/Premium subscribers the moment each milestone is first reached, then never repeats it.</p>
+        <p style={{ fontSize: 12, color: "#8A90A0", margin: "4px 0 14px" }}>Live milestone status for every active entry — the bot auto-notifies Pro/Premium subscribers the moment each milestone is first reached, then never repeats it. Checking a box here (or in Campaign entries above) selects it for the Campaign text builder below.</p>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#5B6270", marginBottom: 10 }}>
-          <input type="checkbox" checked={tracker.length > 0 && trackerSelected.size === tracker.length} onChange={(e) => toggleTrackerSelectAll(e.target.checked)} /> Select all
+          <input type="checkbox" checked={tracker.length > 0 && selectedIds.size === tracker.length} onChange={(e) => toggleTrackerSelectAll(e.target.checked)} /> Select all
         </label>
         {!tracker.length ? (
           <p style={{ fontSize: 12.5, color: "#8A90A0" }}>No active entries to track — add one above.</p>
@@ -725,7 +740,7 @@ export default function AdminScannerCampaign() {
             const profitClass = t.profitPct >= 0 ? "#17A673" : "#E0473F";
             return (
               <div key={t.id} style={{ border: "1px solid #F0F1F4", borderRadius: 12, padding: 14, marginBottom: 10, display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <input type="checkbox" style={{ marginTop: 3 }} checked={trackerSelected.has(t.id)} onChange={() => toggleTrackerSelected(t.id)} />
+                <input type="checkbox" style={{ marginTop: 3 }} checked={selectedIds.has(t.id)} onChange={() => toggleSelected(t.id)} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
                     <div>
