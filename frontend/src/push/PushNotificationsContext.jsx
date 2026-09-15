@@ -29,6 +29,16 @@ function removeLs(key) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
+// Guards against a hung promise (seen on some mobile browsers when service
+// worker registration stalls) permanently leaving the toggle disabled with
+// no way to opt in or out.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out")), ms)),
+  ]);
+}
+
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
@@ -51,6 +61,7 @@ export function PushNotificationsProvider({ children }) {
   const [enabled, setEnabled] = useState(false);
   const [toggleDisabled, setToggleDisabled] = useState(false);
   const [bannerVisible, setBannerVisible] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const configRef = useRef(null); // {firebaseConfig, vapidKey}
   const firebaseLoadedRef = useRef(false);
   const foregroundWiredRef = useRef(false);
@@ -119,6 +130,7 @@ export function PushNotificationsProvider({ children }) {
         if (Notification.permission === "denied") {
           setEnabled(false);
           setToggleDisabled(true); // browser-level block — nothing a toggle here can do
+          setPermissionDenied(true);
           return;
         }
         // permission === "default" and not registered on this device:
@@ -132,39 +144,51 @@ export function PushNotificationsProvider({ children }) {
 
   const enable = useCallback(() => {
     setToggleDisabled(true);
-    return navigator.serviceWorker
-      .register("/firebase-messaging-sw.js")
-      .then(() => navigator.serviceWorker.ready)
-      .then((registration) =>
-        Notification.requestPermission().then((permission) => {
-          if (permission !== "granted") {
-            setEnabled(false);
-            setToggleDisabled(false);
-            setBannerVisible(false);
-            setLs(LS_BANNER_DISMISSED, "1"); // browser will silently no-op future prompts anyway
-            return;
-          }
-          return ensureFirebase()
-            .then((messaging) => messaging.getToken({ vapidKey: configRef.current.vapidKey, serviceWorkerRegistration: registration }))
-            .then((token) =>
-              apiFetch("/api/push/register-token", { method: "POST", body: JSON.stringify({ token }) }).then((res) => {
-                if (!res.ok) throw new Error("register-token failed");
-                setLs(LS_REGISTERED, "1");
-                setLs(LS_TOKEN, token);
-                setLs(LS_BANNER_DISMISSED, "1");
-                setEnabled(true);
-                setToggleDisabled(false);
-                setBannerVisible(false);
-                wireForegroundHandler();
-              })
-            );
-        })
-      )
-      .catch((err) => {
-        console.error("Push opt-in failed:", err);
-        setEnabled(false);
-        setToggleDisabled(false);
-      });
+    // Ask for permission FIRST, before any other async work. Some mobile
+    // browsers only treat a tap as a "real user gesture" long enough to
+    // cover the very next call — chaining service-worker registration
+    // ahead of requestPermission() risked the browser silently no-op'ing
+    // the prompt (no dialog, no error) instead of showing it, which read
+    // to the user as "the opt-in toggle just doesn't do anything."
+    return withTimeout(
+      Notification.requestPermission().then((permission) => {
+        if (permission !== "granted") {
+          setEnabled(false);
+          setToggleDisabled(permission === "denied"); // denied is a browser-level lock; "default" (dismissed) can be retried
+          setPermissionDenied(permission === "denied");
+          setBannerVisible(false);
+          setLs(LS_BANNER_DISMISSED, "1"); // browser will silently no-op future prompts anyway
+          return;
+        }
+        return navigator.serviceWorker
+          .register("/firebase-messaging-sw.js")
+          .then(() => navigator.serviceWorker.ready)
+          .then((registration) =>
+            ensureFirebase()
+              .then((messaging) => messaging.getToken({ vapidKey: configRef.current.vapidKey, serviceWorkerRegistration: registration }))
+              .then((token) =>
+                apiFetch("/api/push/register-token", { method: "POST", body: JSON.stringify({ token }) }).then((res) => {
+                  if (!res.ok) throw new Error("register-token failed");
+                  setLs(LS_REGISTERED, "1");
+                  setLs(LS_TOKEN, token);
+                  setLs(LS_BANNER_DISMISSED, "1");
+                  setEnabled(true);
+                  setToggleDisabled(false);
+                  setBannerVisible(false);
+                  wireForegroundHandler();
+                })
+              )
+          );
+      }),
+      20000
+    ).catch((err) => {
+      // Always resets toggleDisabled, including on a timeout — a stuck SW
+      // registration used to leave the switch permanently disabled with
+      // no way to opt in OR out.
+      console.error("Push opt-in failed:", err);
+      setEnabled(false);
+      setToggleDisabled(false);
+    });
   }, [ensureFirebase, wireForegroundHandler]);
 
   const disable = useCallback(() => {
@@ -177,12 +201,16 @@ export function PushNotificationsProvider({ children }) {
       setToggleDisabled(false);
     };
     const serverCall = token ? apiFetch("/api/push/unregister-token", { method: "POST", body: JSON.stringify({ token }) }) : Promise.resolve();
-    return serverCall
-      .then(() => {
-        /* eslint-disable no-undef */
-        if (typeof firebase !== "undefined" && firebase.apps && firebase.apps.length) return ensureFirebase().then((m) => m.deleteToken());
-        /* eslint-enable no-undef */
-      })
+    return withTimeout(
+      serverCall
+        .then(() => {
+          /* eslint-disable no-undef */
+          if (typeof firebase !== "undefined" && firebase.apps && firebase.apps.length) return ensureFirebase().then((m) => m.deleteToken());
+          /* eslint-enable no-undef */
+        })
+        .catch(() => {}),
+      20000
+    )
       .catch(() => {})
       .then(cleanup);
   }, [ensureFirebase]);
@@ -197,7 +225,7 @@ export function PushNotificationsProvider({ children }) {
   }
 
   return (
-    <PushNotificationsContext.Provider value={{ configured, enabled, toggleDisabled, bannerVisible, toggle, dismissBanner }}>
+    <PushNotificationsContext.Provider value={{ configured, enabled, toggleDisabled, bannerVisible, permissionDenied, toggle, dismissBanner }}>
       {children}
     </PushNotificationsContext.Provider>
   );

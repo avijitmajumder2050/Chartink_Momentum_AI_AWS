@@ -124,10 +124,14 @@ export default function NotificationBell() {
           </div>
           {push.configured && (
             <div style={{ borderTop: "1px solid var(--border)", marginTop: 6, paddingTop: 6 }}>
-              <label className="push-toggle-row" style={{ cursor: "pointer" }}>
+              <label className="push-toggle-row" style={{ cursor: push.permissionDenied ? "default" : "pointer" }}>
                 <span>
                   <span className="push-toggle-row-label">Push notifications</span>
-                  <span className="push-toggle-row-sub">New signals &amp; account alerts</span>
+                  <span className="push-toggle-row-sub">
+                    {push.permissionDenied
+                      ? "Blocked in your browser's site settings — enable notifications there, then reload"
+                      : "New signals & account alerts"}
+                  </span>
                 </span>
                 <span className="toggle-switch">
                   <input type="checkbox" checked={push.enabled} disabled={push.toggleDisabled} onChange={(e) => push.toggle(e.target.checked)} />
