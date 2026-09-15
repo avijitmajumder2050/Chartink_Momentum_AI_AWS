@@ -1888,7 +1888,12 @@ def api_run_scanner(scanner_id):
     cache_key = _scanner_cache_key(scanner_id)
 
     try:
-        result = cache.get_or_fetch(cache_key, SCAN_CACHE_TTL_SECONDS, scanner["run"])
+        # force=True: this is the explicit "Run scanner" action, not the
+        # passive /cached view — a click here should always do real work,
+        # not silently hand back a same-looking result from up to
+        # SCAN_CACHE_TTL_SECONDS ago with no indication nothing actually
+        # ran. Still writes through to the same cache /cached reads from.
+        result = cache.get_or_fetch(cache_key, SCAN_CACHE_TTL_SECONDS, scanner["run"], force=True)
     except Exception as exc:
         return jsonify({
             "scanner_id": scanner_id,

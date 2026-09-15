@@ -34,16 +34,24 @@ def _write(key, value):
         json.dump({"cached_at": time.time(), "data": value}, fh, ensure_ascii=False)
 
 
-def get_or_fetch(key, ttl_seconds, fetch_fn):
+def get_or_fetch(key, ttl_seconds, fetch_fn, force=False):
     """Return cached data for `key` if it's younger than `ttl_seconds`,
     otherwise call `fetch_fn()`, cache the result, and return it.
 
     If `fetch_fn()` raises, any existing cache entry (even stale) is
     returned instead; only re-raises if there's no cache at all.
+
+    `force=True` skips the freshness check and always re-fetches — for a
+    caller that represents an explicit "do this now" user action (e.g. a
+    scanner's Run button) rather than a passive read, where silently
+    handing back a same-looking cached result with no fresh work done
+    would be confusing, not helpful. Still writes the fresh result to
+    cache, so a subsequent non-forced read (e.g. the same scanner's
+    "last cached result" view) reflects it.
     """
     entry = _read(key)
 
-    if entry is not None and (time.time() - entry["cached_at"]) < ttl_seconds:
+    if not force and entry is not None and (time.time() - entry["cached_at"]) < ttl_seconds:
         return entry["data"]
 
     try:
