@@ -83,7 +83,7 @@ export function PushNotificationsProvider({ children }) {
         // support in any browser, so the label is appended as a visible
         // line instead, keeping the whole notification clickable either way.
         const displayBody = ctaLabel ? (body ? `${body}\n${ctaLabel}` : ctaLabel) : body;
-        const n = new Notification(title, { body: displayBody });
+        const n = new Notification(title, { body: displayBody, icon: "/favicon.svg" });
         const dataUrl = payload.data && payload.data.url;
         const urlMatch = body.match(/https?:\/\/\S+/);
         const clickUrl = dataUrl || (urlMatch ? urlMatch[0] : null);

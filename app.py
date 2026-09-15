@@ -1853,7 +1853,13 @@ def firebase_messaging_sw():
         '  const ctaLabel = payload.data && payload.data.cta_label;\n'
         '  const urlMatch = body.match(/https?:\\/\\/\\S+/);\n'
         '  const url = dataUrl || (urlMatch ? urlMatch[0] : self.location.origin);\n'
-        '  const options = { body: body, data: { url: url } };\n'
+        # Android Chrome can render a background-push notification as
+        # blank/near-invisible (or suppress it in some notification-shade
+        # layouts) when showNotification() gets no icon - desktop Chrome
+        # falls back to a default icon fine, Android does not. Absolute
+        # path so it resolves the same regardless of where the SW itself
+        # is served from.
+        '  const options = { body: body, icon: "/favicon.svg", badge: "/favicon.svg", data: { url: url } };\n'
         # `actions` is ONLY honored on a service-worker-shown notification
         # (never on the foreground `new Notification()` path in
         # push-notifications.js — the spec doesn't support actions there
