@@ -9,37 +9,37 @@ import { apiFetch } from "../api/client";
 function IpoCard({ ipo, onDetails }) {
   const mainboard = ipo.segment === "Mainboard";
   return (
-    <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: ipo.logoBg, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 13 }}>
+    <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 14, padding: 16, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: ipo.logoBg, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 11.5, flexShrink: 0 }}>
             {ipo.initials}
           </div>
-          <div>
-            <span style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 3 }}>{ipo.name}</span>
-            <span style={{ background: mainboard ? "#EEEDFD" : "#FBF2E1", color: mainboard ? "#4640DE" : "#B98A2E", fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, display: "block", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={ipo.name}>{ipo.name}</span>
+            <span style={{ background: mainboard ? "#EEEDFD" : "#FBF2E1", color: mainboard ? "#4640DE" : "#B98A2E", fontSize: 9.5, fontWeight: 700, padding: "1px 6px", borderRadius: 100, textTransform: "uppercase", letterSpacing: "0.03em" }}>
               {ipo.segment}
             </span>
           </div>
         </div>
-        <span style={{ background: ipo.tagBg, color: ipo.tagColor, fontSize: 11.5, fontWeight: 700, padding: "5px 10px", borderRadius: 100 }}>{ipo.tag}</span>
+        <span style={{ background: ipo.tagBg, color: ipo.tagColor, fontSize: 10.5, fontWeight: 700, padding: "4px 8px", borderRadius: 100, whiteSpace: "nowrap", flexShrink: 0 }}>{ipo.tag}</span>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <div><span style={{ fontSize: 11.5, color: "#8A90A0", display: "block" }}>Price band</span><span className="num" style={{ fontSize: 14, fontWeight: 600 }}>{ipo.priceBand}</span></div>
-        <div><span style={{ fontSize: 11.5, color: "#8A90A0", display: "block" }}>Lot size</span><span className="num" style={{ fontSize: 14, fontWeight: 600 }}>{ipo.lot}</span></div>
-        <div><span style={{ fontSize: 11.5, color: "#8A90A0", display: "block" }}>GMP</span><span className="num" style={{ fontSize: 14, fontWeight: 700, color: "#17A673" }}>{ipo.gmp}</span></div>
+        <div><span style={{ fontSize: 10.5, color: "#8A90A0", display: "block" }}>Price</span><span className="num" style={{ fontSize: 12.5, fontWeight: 600 }}>{ipo.priceBand}</span></div>
+        <div><span style={{ fontSize: 10.5, color: "#8A90A0", display: "block" }}>Lot</span><span className="num" style={{ fontSize: 12.5, fontWeight: 600 }}>{ipo.lot}</span></div>
+        <div><span style={{ fontSize: 10.5, color: "#8A90A0", display: "block" }}>GMP</span><span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: "#17A673" }}>{ipo.gmp}</span></div>
       </div>
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#5B6270", marginBottom: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#5B6270", marginBottom: 4 }}>
           <span>Subscribed</span><span style={{ fontWeight: 600 }}>{ipo.subLabel}</span>
         </div>
-        <div style={{ width: "100%", height: 6, background: "#F0F1F4", borderRadius: 100 }}>
-          <div style={{ width: ipo.subPct, height: 6, background: "#4640DE", borderRadius: 100 }} />
+        <div style={{ width: "100%", height: 5, background: "#F0F1F4", borderRadius: 100 }}>
+          <div style={{ width: ipo.subPct, height: 5, background: "#4640DE", borderRadius: 100 }} />
         </div>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 4, borderTop: "1px solid #F0F1F4" }}>
-        <span style={{ fontSize: 12, color: "#8A90A0" }}>Closes {ipo.closes}</span>
-        <button type="button" onClick={() => onDetails(ipo)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#4640DE" }}>
+        <span style={{ fontSize: 11, color: "#8A90A0" }}>Closes {ipo.closes}</span>
+        <button type="button" onClick={() => onDetails(ipo)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#4640DE", whiteSpace: "nowrap" }}>
           Details →
         </button>
       </div>
@@ -167,13 +167,15 @@ export default function IpoHub() {
         </div>
       ) : (
         <div style={{ width: "100%", padding: "24px 48px 0" }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             {activeGroup.length === 0 ? (
               <p style={{ color: "#8A90A0", fontSize: 14, padding: "24px 0" }}>No IPOs in this category right now.</p>
             ) : filtered.length === 0 ? (
               <p style={{ color: "#8A90A0", fontSize: 14, padding: "24px 0" }}>No matching IPOs for this filter.</p>
             ) : (
-              filtered.map((ipo) => <IpoCard key={ipo.name} ipo={ipo} onDetails={setDetailsIpo} />)
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
+                {filtered.map((ipo) => <IpoCard key={ipo.name} ipo={ipo} onDetails={setDetailsIpo} />)}
+              </div>
             )}
           </div>
         </div>
