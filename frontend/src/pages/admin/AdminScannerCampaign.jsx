@@ -731,7 +731,7 @@ export default function AdminScannerCampaign() {
                     <div>
                       <a className="symbol-link" href={`/markets/chart?symbol=${encodeURIComponent(t.symbol)}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, fontWeight: 700 }} onClick={(e) => onSymbolClick(e, t.symbol)}>{t.symbol}</a>
                       <span style={{ fontSize: 12, color: "#8A90A0", marginLeft: 10 }}>
-                        Entry {t.entryPrice.toFixed(2)}{t.slPrice != null ? ` · SL ${t.slPrice.toFixed(2)}` : ""}{t.targetPrice != null ? ` · Target ${t.targetPrice.toFixed(2)}` : ""}
+                        Entry {t.entryPrice != null ? t.entryPrice.toFixed(2) : "—"}{t.slPrice != null ? ` · SL ${t.slPrice.toFixed(2)}` : ""}{t.targetPrice != null ? ` · Target ${t.targetPrice.toFixed(2)}` : ""}
                       </span>
                     </div>
                     <div style={{ textAlign: "right" }}>
