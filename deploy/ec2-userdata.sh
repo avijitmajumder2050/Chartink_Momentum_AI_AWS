@@ -61,6 +61,19 @@ playwright install chromium || echo "⚠️ playwright chromium download failed 
 mkdir -p .cache
 sudo chown -R $APP_USER:$APP_USER "$APP_HOME/$REPO_NAME"
 
+# playwright install (above) runs as root — user-data scripts execute
+# as root end to end — so the browser lands in /root/.cache/ms-playwright,
+# not $APP_HOME/.cache. The systemd service below runs as $APP_USER and
+# looks in *its* home dir, finds nothing there, and every IPO/fundamentals
+# scrape that needs a real browser fails with "Executable doesn't exist".
+# Learned this the hard way on the first deploy — copy the browser cache
+# to where the service will actually look for it.
+if [ -d /root/.cache/ms-playwright ]; then
+  sudo mkdir -p "$APP_HOME/.cache"
+  sudo cp -r /root/.cache/ms-playwright "$APP_HOME/.cache/"
+  sudo chown -R $APP_USER:$APP_USER "$APP_HOME/.cache"
+fi
+
 # ------------------------------------------------------
 # systemd service — single gunicorn worker (see wsgi.py's own
 # comment: more than one worker double-starts the alert-monitor bot).
