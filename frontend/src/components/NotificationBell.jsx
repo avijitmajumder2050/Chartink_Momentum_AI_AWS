@@ -56,16 +56,26 @@ export default function NotificationBell() {
   const push = usePushNotifications();
 
   useEffect(() => {
-    apiFetch("/api/notifications/recent")
-      .then((res) => res.json())
-      .then((data) => {
-        setItems(data);
-        let lastSeen = null;
-        try { lastSeen = localStorage.getItem(LS_LAST_SEEN); } catch { /* ignore */ }
-        const lastSeenIndex = lastSeen ? data.findIndex((n) => n.id === lastSeen) : -1;
-        setUnreadCount(lastSeenIndex === -1 ? data.length : lastSeenIndex);
-      })
-      .catch(() => {});
+    function loadNotifications() {
+      apiFetch("/api/notifications/recent")
+        .then((res) => res.json())
+        .then((data) => {
+          setItems(data);
+          let lastSeen = null;
+          try { lastSeen = localStorage.getItem(LS_LAST_SEEN); } catch { /* ignore */ }
+          const lastSeenIndex = lastSeen ? data.findIndex((n) => n.id === lastSeen) : -1;
+          setUnreadCount(lastSeenIndex === -1 ? data.length : lastSeenIndex);
+        })
+        .catch(() => {});
+    }
+    // Fetched once on mount only before — a campaign sent while the tab
+    // was already open (push notifications arrive live via Firebase, so
+    // that side always looked immediate) never showed up here until a
+    // full page reload. Poll instead, same cadence as the admin alert
+    // tracker's own refresh.
+    loadNotifications();
+    const t = setInterval(loadNotifications, 60000);
+    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
