@@ -1025,20 +1025,66 @@ def _user_with_subscription(user):
     return user
 
 
+ADMIN_USERS_CACHE_TTL_SECONDS = 30
+_admin_users_cache = None  # (cached_at, users) — in-process, not connectors/cache.py's
+# file-based cache: list_all_users() hands back real datetime objects in
+# created_at (only isoformat'd later, per user, in _users_with_subscriptions),
+# and that cache's JSON backing store can't serialize those.
+_admin_users_lock = threading.Lock()
+
+
+def _cached_list_all_users():
+    # list_all_users() is 2 real Cognito API calls (~2s+ measured here) —
+    # worth a short cache given both admin pages below call it on every
+    # load. Kept short, and explicitly invalidated by every mutation
+    # endpoint below (create/role/enabled/delete), because the frontend
+    # already refetches right after each of those — a longer TTL with no
+    # invalidation would make an admin's own change look like it silently
+    # didn't take effect until the cache expired.
+    global _admin_users_cache
+    if _admin_users_cache is not None:
+        cached_at, users = _admin_users_cache
+        if time.time() - cached_at < ADMIN_USERS_CACHE_TTL_SECONDS:
+            return users
+    with _admin_users_lock:
+        if _admin_users_cache is not None:
+            cached_at, users = _admin_users_cache
+            if time.time() - cached_at < ADMIN_USERS_CACHE_TTL_SECONDS:
+                return users
+        users = cognito_connector.list_all_users()
+        _admin_users_cache = (time.time(), users)
+        return users
+
+
+def _invalidate_admin_users_cache():
+    global _admin_users_cache
+    _admin_users_cache = None
+
+
+def _users_with_subscriptions(users):
+    # Was a plain sequential loop — one subscription_connector.get_subscription()
+    # DynamoDB round trip per user, one at a time. Fine at today's handful
+    # of users, but scales linearly with the user base for no reason —
+    # each lookup is independent I/O, same shape as the watchlist's own
+    # concurrent per-symbol fetches.
+    def build(u):
+        u = _user_with_subscription(dict(u))
+        u["created_at"] = u["created_at"].isoformat()
+        return u
+
+    with ThreadPoolExecutor(max_workers=min(20, max(1, len(users)))) as pool:
+        return list(pool.map(build, users))
+
+
 @app.get("/api/admin/dashboard")
 @role_required("admin")
 def api_admin_dashboard():
     """Mirrors the logic the removed admin_dashboard() page route used to
     do inline."""
-    users = cognito_connector.list_all_users()
+    users = _cached_list_all_users()
     stats = subscription_connector.compute_revenue_stats(len(users))
     admin_count = sum(1 for u in users if u["role"] == "admin")
-
-    recent_users = []
-    for u in users[:6]:
-        u = _user_with_subscription(dict(u))
-        u["created_at"] = u["created_at"].isoformat()
-        recent_users.append(u)
+    recent_users = _users_with_subscriptions(users[:6])
 
     return jsonify({
         "stats": stats,
@@ -1054,11 +1100,7 @@ def api_admin_users():
     """Mirrors the join logic the removed admin_users_page() used to do
     — the per-user mutation endpoints below (role/enabled/delete/create)
     were already JSON and stay as-is."""
-    users = []
-    for u in cognito_connector.list_all_users():
-        u = _user_with_subscription(dict(u))
-        u["created_at"] = u["created_at"].isoformat()
-        users.append(u)
+    users = _users_with_subscriptions(_cached_list_all_users())
     return jsonify({"users": users})
 
 
@@ -1069,6 +1111,7 @@ def api_admin_set_user_role(email):
     if email == _current_user()["email"] and not data.get("admin", True):
         return jsonify({"error": "You can't remove your own admin access."}), 400
     cognito_connector.set_admin(email, bool(data.get("admin")))
+    _invalidate_admin_users_cache()
     return jsonify({"ok": True})
 
 
@@ -1079,6 +1122,7 @@ def api_admin_set_user_enabled(email):
     if email == _current_user()["email"] and not data.get("enabled", True):
         return jsonify({"error": "You can't disable your own account."}), 400
     cognito_connector.set_enabled(email, bool(data.get("enabled")))
+    _invalidate_admin_users_cache()
     return jsonify({"ok": True})
 
 
@@ -1091,6 +1135,7 @@ def api_admin_delete_user(email):
         cognito_connector.delete_user(email)
     except cognito_connector.AuthError as exc:
         return jsonify({"error": str(exc)}), 400
+    _invalidate_admin_users_cache()
     return jsonify({"ok": True})
 
 
@@ -1118,6 +1163,7 @@ def api_admin_create_user():
         cognito_connector.admin_create_user(email, name, password, make_admin=make_admin)
     except cognito_connector.AuthError as exc:
         return jsonify({"error": str(exc)}), 400
+    _invalidate_admin_users_cache()
     return jsonify({"ok": True, "email": email, "password": password})
 
 
@@ -1177,14 +1223,17 @@ def admin_users_export_csv():
         if user["role"] != "admin":
             abort(403)
 
-    users = [_user_with_subscription(dict(u)) for u in cognito_connector.list_all_users()]
+    users = _users_with_subscriptions(_cached_list_all_users())
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Email", "Name", "Role", "Confirmed", "Plan", "Subscription Status", "Joined"])
     for u in users:
         writer.writerow([
+            # created_at comes back as an ISO string here (see
+            # _users_with_subscriptions), not the raw datetime
+            # list_all_users() itself returns — just take the date part.
             u["email"], u["name"], u["role"], u["confirmed"], u["plan"], u["sub_status"],
-            u["created_at"].strftime("%Y-%m-%d"),
+            u["created_at"][:10],
         ])
     response = app.response_class(buf.getvalue(), mimetype="text/csv")
     response.headers["Content-Disposition"] = "attachment; filename=quantile-users.csv"
