@@ -291,9 +291,10 @@ def run_first_minute_movers():
     gainers_df, losers_df = first_minute_mod.get_first_minute_gainers_losers(top_n=10)
 
     if gainers_df.empty and losers_df.empty:
-        raise RuntimeError("No first-minute candle data yet - try again shortly after market open (09:15 IST)")
+        raise RuntimeError("No first-candle data yet - try again shortly after market open (09:15 IST)")
 
     rows = gainers_df.to_dict(orient="records") + losers_df.to_dict(orient="records")
+    candle_label = f"1st {first_minute_mod.INTERVAL_MINUTES}-min"
 
     return {
         "stats": [_stat("Gainers", len(gainers_df)), _stat("Losers", len(losers_df))],
@@ -302,11 +303,11 @@ def run_first_minute_movers():
             _col("Type", "Type"),
             _col("Change %", "Change %", "pct"),
             _col("Prev Close", "Prev Close", "num"),
-            _col("Open", "Open (1st min)", "num"),
-            _col("Close", "Close (1st min)", "num"),
-            _col("High", "High (1st min)", "num"),
-            _col("Low", "Low (1st min)", "num"),
-            _col("Volume", "Volume (1st min)", "num"),
+            _col("Open", f"Open ({candle_label})", "num"),
+            _col("Close", f"Close ({candle_label})", "num"),
+            _col("High", f"High ({candle_label})", "num"),
+            _col("Low", f"Low ({candle_label})", "num"),
+            _col("Volume", f"Volume ({candle_label})", "num"),
             _col("First Candle Time", "Candle Time"),
         ],
         "rows": rows,
@@ -333,10 +334,10 @@ SCANNERS = {
         "run": run_dhan_ema_breakout,
     },
     "first_minute_movers": {
-        "name": "First-Minute Gainers/Losers",
+        "name": "First 5-Min Candle Gainers/Losers",
         "description": (
             "Top 10 gainers and top 10 losers by % change of each stock's "
-            "first 1-minute candle (09:15-09:16 IST) vs the previous "
+            "first 5-minute candle (09:15-09:20 IST) vs the previous "
             "session's close — an early read on opening momentum, not a "
             "full-day scan"
         ),

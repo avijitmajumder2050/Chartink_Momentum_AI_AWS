@@ -196,17 +196,19 @@ def _fetch_intraday_minute(security_id, from_date, to_date, interval=1, max_retr
     })
 
 
-def _fetch_opening_move(security_id, date_str, lookback_days=6):
+def _fetch_opening_move(security_id, date_str, lookback_days=6, interval=1):
     to_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     from_date = to_date - timedelta(days=lookback_days)
     # One intraday call spanning several days back through today's open
-    # derives BOTH the previous session's close (its last 1-minute candle)
-    # and today's first 1-minute candle — half the Dhan calls of fetching
+    # derives BOTH the previous session's close (its last candle at this
+    # interval) and today's first candle — half the Dhan calls of fetching
     # them separately (historical_daily_data + intraday_minute_data), which
     # matters a lot given this endpoint's confirmed-live rate limit and
     # that callers here (first_minute_movers.py) need this for many stocks
-    # in one HTTP request.
-    df = _fetch_intraday_minute(security_id, f"{from_date.isoformat()} 09:15:00", f"{date_str} 09:20:00", interval=1)
+    # in one HTTP request. The window end (09:30) comfortably covers the
+    # first candle regardless of interval (1/5/15/25/60 minutes) — only
+    # the very first row on `date_str` is actually used.
+    df = _fetch_intraday_minute(security_id, f"{from_date.isoformat()} 09:15:00", f"{date_str} 09:30:00", interval=interval)
     if df.empty:
         return {"prev_close": None, "first_candle": None}
 
@@ -231,19 +233,21 @@ def _fetch_opening_move(security_id, date_str, lookback_days=6):
     return {"prev_close": prev_close, "first_candle": first_candle}
 
 
-def get_opening_move(security_id, date_str):
-    """{prev_close, first_candle} for `date_str` (YYYY-MM-DD) —
-    first_candle is {time, open, high, low, close, volume} for the first
-    1-minute candle (09:15-09:16 IST), or None if the market hasn't opened
-    yet that day (or there's no data at all, e.g. a trading holiday).
-    prev_close is the previous session's last 1-minute price, or None if
-    that couldn't be found either.
+def get_opening_move(security_id, date_str, interval=1):
+    """{prev_close, first_candle} for `date_str` (YYYY-MM-DD) — first_candle
+    is {time, open, high, low, close, volume} for the first candle of the
+    day at `interval` minutes (1, 5, 15, 25 or 60 — Dhan's supported
+    intraday intervals; e.g. interval=5 -> the 09:15-09:20 IST candle), or
+    None if the market hasn't opened yet that day (or there's no data at
+    all, e.g. a trading holiday). prev_close is the previous session's
+    last candle close at that same interval, or None if that couldn't be
+    found either.
 
     A moderate (not full-day) cache TTL is used deliberately: once the
     first candle has actually formed it never changes again, but a request
-    made before 09:16 IST legitimately gets first_candle=None, and that
+    made before market open legitimately gets first_candle=None, and that
     shouldn't get pinned as the cached answer for the rest of the day
     (connectors/cache.py caches failures/None just as eagerly as real
     results)."""
-    key = f"dhan_opening_move_{security_id}_{date_str}"
-    return cache.get_or_fetch(key, FIRST_MINUTE_CACHE_TTL_SECONDS, lambda: _fetch_opening_move(security_id, date_str))
+    key = f"dhan_opening_move_{security_id}_{date_str}_{interval}m"
+    return cache.get_or_fetch(key, FIRST_MINUTE_CACHE_TTL_SECONDS, lambda: _fetch_opening_move(security_id, date_str, interval=interval))

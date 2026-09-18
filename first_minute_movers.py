@@ -1,10 +1,10 @@
-"""First-minute-candle gainers/losers scanner — Dhan-based, alongside this
+"""First-opening-candle gainers/losers scanner — Dhan-based, alongside this
 file's siblings (dhan_ema_breakout.py, chartink_stoch_backtest.py).
 
-Ranks stocks by % change of their very first 1-minute candle of the trading
-day (09:15-09:16 IST close) vs the previous session's close — an early read
-on which names are moving right at the open, not a full-day gainer/loser
-list.
+Ranks stocks by % change of their first candle of the trading day (09:15-
+09:20 IST close, at INTERVAL_MINUTES) vs the previous session's close — an
+early read on which names are moving right at the open, not a full-day
+gainer/loser list.
 
 Two stages, not one straight scan of the whole watchlist:
 
@@ -20,12 +20,11 @@ Two stages, not one straight scan of the whole watchlist:
 
 2. Verify precisely. Only for that short candidate list, dhan_connector.
    get_opening_move() is called (one throttled, retried Dhan request per
-   candidate) to get the REAL first-1-minute-candle close and previous
-   session close — the actual numbers reported come from here, not the
-   cheap shortlist step. A stock that hasn't moved live yet almost never
-   turns out to be a first-minute mover either, so this rarely misses a
-   genuine top-10, while keeping the whole scan to ~30 Dhan calls instead
-   of ~700.
+   candidate) to get the REAL first-candle close and previous session
+   close — the actual numbers reported come from here, not the cheap
+   shortlist step. A stock that hasn't moved live yet almost never turns
+   out to be an early mover either, so this rarely misses a genuine
+   top-10, while keeping the whole scan to ~30 Dhan calls instead of ~700.
 """
 
 import logging
@@ -39,6 +38,10 @@ import pytz
 from connectors import chart_connector, dhan_connector
 
 IST = pytz.timezone("Asia/Kolkata")
+
+# Candle size for "first candle of the day" — 5 -> the 09:15-09:20 IST
+# candle. One of Dhan's supported intraday intervals: 1, 5, 15, 25, 60.
+INTERVAL_MINUTES = 5
 
 # How many candidates to verify precisely on each side (gainers/losers) —
 # comfortably more than top_n so a shortlisting miss still leaves enough
@@ -61,7 +64,7 @@ def _pct_change(prev_close, current):
 
 def _verify_one(symbol, security_id, date_str):
     try:
-        move = dhan_connector.get_opening_move(security_id, date_str)
+        move = dhan_connector.get_opening_move(security_id, date_str, interval=INTERVAL_MINUTES)
     except Exception as exc:
         logger.warning("%s skipped - %s", symbol, exc)
         return None
@@ -94,7 +97,7 @@ def get_first_minute_gainers_losers(top_n=10):
     the market hasn't opened yet or nothing could be verified. Gainers and
     losers never overlap even when the verified set is smaller than
     2 x top_n."""
-    logger.info("First-minute gainers/losers scan started")
+    logger.info("First-%smin-candle gainers/losers scan started", INTERVAL_MINUTES)
 
     today = datetime.now(IST)
     date_str = today.strftime("%Y-%m-%d")
@@ -129,7 +132,7 @@ def get_first_minute_gainers_losers(top_n=10):
             if row is not None:
                 results.append(row)
 
-    logger.info("First-minute candles verified for %s of %s candidates", len(results), len(candidates))
+    logger.info("First candles verified for %s of %s candidates", len(results), len(candidates))
 
     df = pd.DataFrame(results)
     if df.empty:
