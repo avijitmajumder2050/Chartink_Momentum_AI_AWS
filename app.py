@@ -1951,6 +1951,104 @@ def _start_alert_monitor():
     threading.Thread(target=_alert_monitor_loop, daemon=True, name="alert-monitor").start()
 
 
+# ============================================================
+# BREAKOUT-WATCH BOT
+#
+# A second, faster, narrower bot than the general alert-monitor above —
+# only for today's still-pending breakout-source entries (source ==
+# "first_minute_movers", created by _create_breakout_entries_for_symbols,
+# either by hand or the automatic morning bot), and only for the
+# entry_triggered crossing itself, not the slower profit/RR/SL milestones
+# the general bot already covers on its own 5-minute cadence. The general
+# bot would still eventually catch entry_triggered too, just up to
+# BREAKOUT_WATCH_INTERVAL_SECONDS later — this exists specifically to
+# react faster, and to implement "first one wins": once ANY pending
+# breakout-batch stock actually crosses its entry price, every OTHER
+# still-pending one from that same batch is deactivated immediately,
+# rather than potentially also triggering (and getting traded) minutes
+# later. This is a one-trade-from-the-batch design, not "notify
+# everything that eventually triggers."
+# ============================================================
+
+BREAKOUT_WATCH_INTERVAL_SECONDS = 60
+
+
+def _breakout_watch_once():
+    today_str = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
+    entries = campaign_connector.list_entries(active_only=True)
+    pending = [
+        e for e in entries
+        if e.get("source") == "first_minute_movers"
+        and (e.get("created_at") or "").startswith(today_str)
+        and "entry_triggered" not in (e.get("milestones_notified") or [])
+    ]
+    if len(pending) < 2:
+        return  # nothing to race against — a lone candidate just waits for the general bot
+
+    winner = None
+    for entry in pending:
+        entry_price = entry.get("entry_price")
+        if entry_price is None:
+            continue
+        try:
+            change = _symbol_change_pct(entry["symbol"])
+        except Exception:
+            change = None
+        current_price = change["value"] if change else None
+        if current_price is not None and current_price >= float(entry_price):
+            winner = (entry, current_price)
+            break
+
+    if winner is None:
+        return
+
+    entry, current_price = winner
+    entry_price = float(entry["entry_price"])
+    sl_price = float(entry["sl_price"]) if entry.get("sl_price") is not None else None
+
+    title, body = _milestone_message(entry["symbol"], "entry_triggered", entry_price, sl_price, current_price)
+    try:
+        _send_campaign_notification(
+            title, body, ALERT_MONITOR_AUDIENCE, entry_symbols=[entry["symbol"]],
+            channels=("in_app", "push") if fcm_connector.is_configured() else ("in_app",),
+            sent_by="breakout-watch-bot",
+        )
+    except Exception as exc:
+        print(f"[breakout-watch] notify failed for {entry['symbol']}: {exc}", file=sys.stderr)
+
+    already_notified = set(entry.get("milestones_notified") or [])
+    try:
+        campaign_connector.update_entry(entry["id"], milestones_notified=list(already_notified | {"entry_triggered"}))
+    except Exception as exc:
+        print(f"[breakout-watch] couldn't persist milestone for {entry['symbol']}: {exc}", file=sys.stderr)
+
+    losers = [e for e in pending if e["id"] != entry["id"]]
+    for loser in losers:
+        try:
+            campaign_connector.update_entry(
+                loser["id"], active=False,
+                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} triggered first at {current_price:.2f}]",
+            )
+        except Exception as exc:
+            print(f"[breakout-watch] couldn't deactivate {loser['symbol']}: {exc}", file=sys.stderr)
+
+    print(f"[breakout-watch] {today_str}: {entry['symbol']} triggered first at {current_price:.2f} - cancelled {[l['symbol'] for l in losers]}", file=sys.stderr)
+
+
+def _breakout_watch_loop():
+    while True:
+        try:
+            if _market_status().startswith("Markets open"):
+                _breakout_watch_once()
+        except Exception as exc:
+            print(f"[breakout-watch] check cycle failed: {exc}", file=sys.stderr)
+        time.sleep(BREAKOUT_WATCH_INTERVAL_SECONDS)
+
+
+def _start_breakout_watch():
+    threading.Thread(target=_breakout_watch_loop, daemon=True, name="breakout-watch").start()
+
+
 @app.get("/api/admin/campaign/tracker")
 @role_required("admin")
 def api_admin_campaign_tracker():
@@ -2201,6 +2299,7 @@ if __name__ == "__main__":
     # executes __main__ once per real process, so there's no risk of
     # starting a second monitor thread on a reloader respawn either.
     _start_alert_monitor()
+    _start_breakout_watch()
 
     # threaded=True lets the dev server actually parallelize the concurrent
     # per-symbol fetches the Chart Wall's EMA cross filter issues (356

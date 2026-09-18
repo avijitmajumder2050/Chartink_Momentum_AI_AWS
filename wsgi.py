@@ -13,6 +13,7 @@ this module again and start its own copy of the monitor thread,
 duplicate-notifying subscribers.
 """
 
-from app import app, _start_alert_monitor
+from app import app, _start_alert_monitor, _start_breakout_watch
 
 _start_alert_monitor()
+_start_breakout_watch()
