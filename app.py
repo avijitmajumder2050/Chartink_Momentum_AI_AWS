@@ -1719,38 +1719,70 @@ AUTO_BREAKOUT_ENABLED = True
 AUTO_BREAKOUT_TOP_N = 4
 AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02d}"
 AUTO_BREAKOUT_WINDOW_END = "10:30"
-_auto_breakout_state = {"date": None, "done": False}
+_auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set()}
 
 
 def _auto_create_breakout_alerts():
+    """Runs on every alert-monitor tick (every ALERT_MONITOR_INTERVAL_
+    SECONDS while markets are open) but only actually does anything within
+    the AUTO_BREAKOUT_WINDOW_START..END IST window, and only once per
+    calendar day overall — tracked in _auto_breakout_state, not a one-shot
+    flag set after the very first attempt: the top-N gainer list is frozen
+    the first tick data is available (so a shifting ranking across ticks
+    can't add more than AUTO_BREAKOUT_TOP_N entries total), but each of
+    those frozen symbols keeps getting retried on later ticks for as long
+    as its own outcome is still "second candle hasn't formed yet" — a
+    stock whose second candle is confirmed red (added), confirmed NOT red,
+    or simply not found is resolved immediately and never retried, since
+    none of those outcomes can change. Only once every symbol is resolved,
+    or the window closes, does today's run end — a single attempt at
+    09:25 that comes up empty is NOT treated as "no match for today"."""
     if not AUTO_BREAKOUT_ENABLED:
         return
 
     now = datetime.datetime.now(chart_connector.IST)
     today_str = now.strftime("%Y-%m-%d")
     if _auto_breakout_state["date"] != today_str:
-        _auto_breakout_state["date"] = today_str
-        _auto_breakout_state["done"] = False
+        _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set())
 
     if _auto_breakout_state["done"]:
         return
     now_hm = now.strftime("%H:%M")
-    if not (AUTO_BREAKOUT_WINDOW_START <= now_hm <= AUTO_BREAKOUT_WINDOW_END):
+    if now_hm < AUTO_BREAKOUT_WINDOW_START:
         return
+    window_closed = now_hm > AUTO_BREAKOUT_WINDOW_END
 
-    try:
-        gainers_df, _losers_df = first_minute_mod.get_first_minute_gainers_losers(top_n=AUTO_BREAKOUT_TOP_N)
-    except Exception as exc:
-        print(f"[auto-breakout] scan failed: {exc}", file=sys.stderr)
-        return
+    if _auto_breakout_state["symbols"] is None:
+        try:
+            gainers_df, _losers_df = first_minute_mod.get_first_minute_gainers_losers(top_n=AUTO_BREAKOUT_TOP_N)
+        except Exception as exc:
+            print(f"[auto-breakout] scan failed: {exc}", file=sys.stderr)
+            if window_closed:
+                _auto_breakout_state["done"] = True
+                print(f"[auto-breakout] {today_str}: window closed with no successful scan - nothing added today", file=sys.stderr)
+            return
+        if gainers_df.empty:
+            if window_closed:
+                _auto_breakout_state["done"] = True
+                print(f"[auto-breakout] {today_str}: window closed with no scanner data - nothing added today", file=sys.stderr)
+            return
+        _auto_breakout_state["symbols"] = gainers_df.head(AUTO_BREAKOUT_TOP_N)["Stock Name"].tolist()
+        print(f"[auto-breakout] {today_str}: locked in top {AUTO_BREAKOUT_TOP_N} gainers {_auto_breakout_state['symbols']}", file=sys.stderr)
 
-    if gainers_df.empty:
-        return  # market may not be open yet / no data — retried next tick within the window
+    pending = [s for s in _auto_breakout_state["symbols"] if s not in _auto_breakout_state["resolved"]]
+    if pending:
+        results = _create_breakout_entries_for_symbols(pending, created_by="auto-breakout-bot")
+        for r in results:
+            still_pending = not r["ok"] and "hasn't formed yet" in (r.get("reason") or "")
+            if not still_pending:
+                _auto_breakout_state["resolved"].add(r["symbol"])
+        print(f"[auto-breakout] {today_str} attempt on {pending}: {results}", file=sys.stderr)
 
-    symbols = gainers_df.head(AUTO_BREAKOUT_TOP_N)["Stock Name"].tolist()
-    results = _create_breakout_entries_for_symbols(symbols, created_by="auto-breakout-bot")
-    _auto_breakout_state["done"] = True  # once per day regardless of outcome — see module docstring above
-    print(f"[auto-breakout] {today_str} top {AUTO_BREAKOUT_TOP_N} gainers {symbols}: {results}", file=sys.stderr)
+    if window_closed or len(_auto_breakout_state["resolved"]) >= len(_auto_breakout_state["symbols"]):
+        _auto_breakout_state["done"] = True
+        unresolved = set(_auto_breakout_state["symbols"]) - _auto_breakout_state["resolved"]
+        if unresolved:
+            print(f"[auto-breakout] {today_str}: window closed, still pending: {sorted(unresolved)}", file=sys.stderr)
 
 
 def _milestones_reached(entry_price, sl_price, current_price):
