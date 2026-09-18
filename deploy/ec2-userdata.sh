@@ -84,6 +84,13 @@ fi
 # local `AWS_PROFILE` config does — omitting this makes every boto3
 # client construction raise NoRegionError at first request. Learned
 # this the hard way on the first deploy; don't drop it on a future one.
+#
+# --timeout 180: gunicorn's default (30s) kills and restarts the worker
+# mid-request for a long-running scanner run — the First-Minute Gainers/
+# Losers scan walks ~350 watchlist stocks x 2 Dhan API calls each,
+# deliberately throttled to stay under Dhan's intraday rate limit, and
+# can take over a minute end to end. With only one worker (see above),
+# a kill here also briefly interrupts the alert-monitor bot.
 # ------------------------------------------------------
 sudo tee /etc/systemd/system/quantile-backend.service > /dev/null <<EOF
 [Unit]
@@ -96,7 +103,7 @@ User=$APP_USER
 WorkingDirectory=$APP_HOME/$REPO_NAME
 Environment=PYTHONUNBUFFERED=1
 Environment=AWS_DEFAULT_REGION=$REGION
-ExecStart=$APP_HOME/$REPO_NAME/venv/bin/gunicorn --workers 1 --threads 4 --bind 0.0.0.0:8000 --access-logfile - --error-logfile - wsgi:app
+ExecStart=$APP_HOME/$REPO_NAME/venv/bin/gunicorn --workers 1 --threads 4 --timeout 180 --bind 0.0.0.0:8000 --access-logfile - --error-logfile - wsgi:app
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/quantile-backend.log

@@ -24,6 +24,7 @@ from flask import Flask, Response, abort, jsonify, request, session
 
 import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
+import first_minute_movers as first_minute_mod
 import mock_data
 from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
 
@@ -285,6 +286,33 @@ def run_dhan_ema_breakout():
     }
 
 
+def run_first_minute_movers():
+
+    gainers_df, losers_df = first_minute_mod.get_first_minute_gainers_losers(top_n=10)
+
+    if gainers_df.empty and losers_df.empty:
+        raise RuntimeError("No first-minute candle data yet - try again shortly after market open (09:15 IST)")
+
+    rows = gainers_df.to_dict(orient="records") + losers_df.to_dict(orient="records")
+
+    return {
+        "stats": [_stat("Gainers", len(gainers_df)), _stat("Losers", len(losers_df))],
+        "columns": [
+            _col("Stock Name", "Stock", "symbol"),
+            _col("Type", "Type"),
+            _col("Change %", "Change %", "pct"),
+            _col("Prev Close", "Prev Close", "num"),
+            _col("Open", "Open (1st min)", "num"),
+            _col("Close", "Close (1st min)", "num"),
+            _col("High", "High (1st min)", "num"),
+            _col("Low", "Low (1st min)", "num"),
+            _col("Volume", "Volume (1st min)", "num"),
+            _col("First Candle Time", "Candle Time"),
+        ],
+        "rows": rows,
+    }
+
+
 SCANNERS = {
     "stoch": {
         "name": "Stochastic Crossover",
@@ -303,6 +331,16 @@ SCANNERS = {
             "EOD data from S3"
         ),
         "run": run_dhan_ema_breakout,
+    },
+    "first_minute_movers": {
+        "name": "First-Minute Gainers/Losers",
+        "description": (
+            "Top 10 gainers and top 10 losers by % change of each stock's "
+            "first 1-minute candle (09:15-09:16 IST) vs the previous "
+            "session's close — an early read on opening momentum, not a "
+            "full-day scan"
+        ),
+        "run": run_first_minute_movers,
     },
 }
 

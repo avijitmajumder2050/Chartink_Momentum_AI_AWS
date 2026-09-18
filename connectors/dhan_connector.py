@@ -15,6 +15,8 @@ account.
 """
 
 import io
+import time
+from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
@@ -32,6 +34,16 @@ SECURITY_MASTER_CACHE_TTL_SECONDS = 24 * 60 * 60
 # Historical daily candles only change once a day after market close;
 # matches fundamentals_connector's PRICE_CACHE_TTL_SECONDS.
 HISTORICAL_CACHE_TTL_SECONDS = 6 * 60 * 60
+
+# The first 1-minute candle of a trading day, once formed, never changes
+# again — but a request made before 09:16 IST legitimately has "no candle
+# yet", and that None shouldn't get pinned as the cached answer for the
+# rest of the day (connectors/cache.py caches failures/None just as
+# eagerly as real results — see chart_connector.py's batch-quote fix for
+# why that's usually exactly what's wanted, but not here). A moderate TTL
+# means a pre-open request just gets naturally retried a few minutes
+# later instead of staying wrong all day.
+FIRST_MINUTE_CACHE_TTL_SECONDS = 20 * 60
 
 _client = None
 
@@ -142,3 +154,96 @@ def get_historical_daily(security_id, from_date, to_date):
     key = f"dhan_historical_{security_id}_{from_date}_{to_date}"
     rows = cache.get_or_fetch(key, HISTORICAL_CACHE_TTL_SECONDS, lambda: _fetch_historical_daily(security_id, from_date, to_date))
     return pd.DataFrame(rows)
+
+
+def _fetch_intraday_minute(security_id, from_date, to_date, interval=1, max_retries=6, retry_delay=2):
+    # Confirmed live (2026-09-18): this endpoint returns a DH-904 rate-limit
+    # error under concurrent load, unlike historical_daily_data which
+    # hasn't been observed to — retried with backoff rather than assumed
+    # safe, same posture as chart_connector._get_quotes's batch retries.
+    response = None
+    for attempt in range(1, max_retries + 1):
+        response = _get_client().intraday_minute_data(
+            security_id=security_id,
+            exchange_segment=dhanhq.NSE,
+            instrument_type="EQUITY",
+            from_date=from_date,
+            to_date=to_date,
+            interval=interval,
+        )
+        if response.get("status") == "success":
+            break
+
+        remarks = response.get("remarks")
+        rate_limited = isinstance(remarks, dict) and remarks.get("error_code") == "DH-904"
+        if rate_limited and attempt < max_retries:
+            time.sleep(retry_delay * attempt)
+            continue
+        raise RuntimeError(f"Dhan intraday_minute_data failed for {security_id}: {remarks}")
+
+    candles = response["data"]
+    if not candles.get("timestamp"):
+        return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume"])
+
+    times = pd.to_datetime(candles["timestamp"], unit="s", utc=True).tz_convert("Asia/Kolkata")
+    return pd.DataFrame({
+        "time": times,
+        "open": candles["open"],
+        "high": candles["high"],
+        "low": candles["low"],
+        "close": candles["close"],
+        "volume": candles["volume"],
+    })
+
+
+def _fetch_opening_move(security_id, date_str, lookback_days=6):
+    to_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    from_date = to_date - timedelta(days=lookback_days)
+    # One intraday call spanning several days back through today's open
+    # derives BOTH the previous session's close (its last 1-minute candle)
+    # and today's first 1-minute candle — half the Dhan calls of fetching
+    # them separately (historical_daily_data + intraday_minute_data), which
+    # matters a lot given this endpoint's confirmed-live rate limit and
+    # that callers here (first_minute_movers.py) need this for many stocks
+    # in one HTTP request.
+    df = _fetch_intraday_minute(security_id, f"{from_date.isoformat()} 09:15:00", f"{date_str} 09:20:00", interval=1)
+    if df.empty:
+        return {"prev_close": None, "first_candle": None}
+
+    day = df["time"].dt.strftime("%Y-%m-%d")
+    prior = df[day < date_str]
+    prev_close = float(prior.iloc[-1]["close"]) if not prior.empty else None
+
+    today_rows = df[day == date_str]
+    if today_rows.empty:
+        first_candle = None
+    else:
+        first = today_rows.iloc[0]
+        first_candle = {
+            "time": first["time"].strftime("%H:%M"),
+            "open": float(first["open"]),
+            "high": float(first["high"]),
+            "low": float(first["low"]),
+            "close": float(first["close"]),
+            "volume": float(first["volume"]),
+        }
+
+    return {"prev_close": prev_close, "first_candle": first_candle}
+
+
+def get_opening_move(security_id, date_str):
+    """{prev_close, first_candle} for `date_str` (YYYY-MM-DD) —
+    first_candle is {time, open, high, low, close, volume} for the first
+    1-minute candle (09:15-09:16 IST), or None if the market hasn't opened
+    yet that day (or there's no data at all, e.g. a trading holiday).
+    prev_close is the previous session's last 1-minute price, or None if
+    that couldn't be found either.
+
+    A moderate (not full-day) cache TTL is used deliberately: once the
+    first candle has actually formed it never changes again, but a request
+    made before 09:16 IST legitimately gets first_candle=None, and that
+    shouldn't get pinned as the cached answer for the rest of the day
+    (connectors/cache.py caches failures/None just as eagerly as real
+    results)."""
+    key = f"dhan_opening_move_{security_id}_{date_str}"
+    return cache.get_or_fetch(key, FIRST_MINUTE_CACHE_TTL_SECONDS, lambda: _fetch_opening_move(security_id, date_str))

@@ -299,6 +299,41 @@ def _get_live_bar(instrument_id):
     return _live_bar_from_quote(quotes.get(str(instrument_id)) if quotes else None)
 
 
+def get_live_change_pct_batch(security_ids):
+    """{security_id: pct_change} from the SAME batched/cached live-quote
+    call every other live price on this site already uses — a cheap way
+    to rank a large universe (e.g. the whole watchlist) by how far each
+    stock has already moved today, before doing something expensive
+    per-symbol for only the stocks that matter (see first_minute_movers.py,
+    which uses this to shortlist candidates before spending Dhan's tightly
+    rate-limited intraday-candle calls on just those).
+
+    Computed as last_price vs the quote's own ohlc.close. During market
+    hours that reflects the previous session's close (the standard "gap %"
+    definition); Dhan appears to roll ohlc.close over to today's own close
+    once the market has shut, so this is only meaningful as a same-day
+    shortlist signal, not a stable previous-close source in general —
+    callers that need an authoritative previous close (or already-final
+    Change %) should compute it themselves for their shortlisted subset,
+    not trust this batch for the final number.
+    """
+    quotes = _get_live_quotes_batch()
+    if not quotes:
+        return {}
+
+    result = {}
+    for security_id in security_ids:
+        quote = quotes.get(str(security_id))
+        if not quote or "ohlc" not in quote:
+            continue
+        prev_close = quote["ohlc"].get("close")
+        last_price = quote.get("last_price")
+        if not prev_close or last_price is None:
+            continue
+        result[str(security_id)] = (last_price - prev_close) / prev_close * 100
+    return result
+
+
 def get_live_circuit_status(instrument_id):
     """Precise (not guessed) upper/lower circuit status for one
     instrument, straight from Dhan's own quote_data fields

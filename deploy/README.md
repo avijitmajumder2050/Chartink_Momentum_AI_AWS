@@ -12,7 +12,7 @@ backend; everything else routes to the S3-hosted SPA build.
 | Backend EC2 instance | `i-035c10ae55c3f8b9c` (t3.micro), security group `sg-073a1f6cc534ed636` |
 | EC2 launch template | `quantile-backend-lt` (`lt-0fdfe8cd0e39e71a2`) — documents the instance's exact config; not directly invoked by the daily start/stop, which targets the existing instance |
 | EC2 IAM role | `quantile-staging-ec2-role` / instance profile `quantile-staging-ec2-profile` |
-| Backend systemd service | `quantile-backend` — `gunicorn --workers 1 --threads 4 --bind 0.0.0.0:8000 wsgi:app` |
+| Backend systemd service | `quantile-backend` — `gunicorn --workers 1 --threads 4 --timeout 180 --bind 0.0.0.0:8000 wsgi:app` |
 | Repo URL for EC2 to clone | SSM `/chartink-momentum-ai/github_repo` |
 | Scheduler/on-demand Lambda | `quantile-backend-scheduler` (`deploy/lambda/handler.py`) |
 | REST API (fronts the Lambda) | `5k5etz73r9` — `https://5k5etz73r9.execute-api.ap-south-1.amazonaws.com/prod/` |
