@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../api/client";
 import { useChartPreview } from "../../chart/ChartPreviewContext";
+import { formatISTDateTime } from "../../utils/formatDate";
 
 // Ported from templates/admin_scanner_campaign.html (996 lines, the
 // biggest/most logic-heavy page in the app) + its inline script. New
@@ -920,7 +921,7 @@ export default function AdminScannerCampaign() {
                   <td style={{ padding: 10, fontSize: 12, color: "#5B6270", textTransform: "capitalize" }}>{(n.audience || ["free", "pro", "premium"]).join(", ")}</td>
                   <td style={{ padding: 10, fontSize: 13 }}>{n.recipient_count}</td>
                   <td style={{ padding: 10, fontSize: 12, color: "#8A90A0" }}>{n.sent_by}</td>
-                  <td style={{ padding: 10, fontSize: 12, color: "#8A90A0" }}>{n.sent_at.slice(0, 16).replace("T", " ")}</td>
+                  <td style={{ padding: 10, fontSize: 12, color: "#8A90A0" }}>{formatISTDateTime(n.sent_at)}</td>
                   <td style={{ padding: 10 }}>
                     <button type="button" onClick={() => deleteNotification(n.id)} style={{ background: "#FCEBEA", color: "#E0473F", border: "none", fontSize: 11.5, fontWeight: 700, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>Delete</button>
                   </td>

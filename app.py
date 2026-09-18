@@ -918,7 +918,7 @@ def _dashboard_scan_results(limit=4):
         return None
     return {
         "rows": entry["data"].get("rows", [])[:limit],
-        "generated_at": datetime.datetime.fromtimestamp(entry["cached_at"]).strftime("%d %b, %I:%M %p"),
+        "generated_at": datetime.datetime.fromtimestamp(entry["cached_at"], tz=chart_connector.IST).strftime("%d %b, %I:%M %p"),
     }
 
 
@@ -1926,7 +1926,7 @@ def api_cached_scanner(scanner_id):
     result = dict(entry["data"])
     result["scanner_id"] = scanner_id
     result["scanner_name"] = scanner["name"]
-    result["generated_at"] = datetime.datetime.fromtimestamp(entry["cached_at"]).isoformat(timespec="seconds")
+    result["generated_at"] = datetime.datetime.fromtimestamp(entry["cached_at"], tz=chart_connector.IST).strftime("%d %b, %I:%M %p")
     result["error"] = None
     result["cached"] = True
     return jsonify(result)
@@ -1953,14 +1953,14 @@ def api_run_scanner(scanner_id):
         return jsonify({
             "scanner_id": scanner_id,
             "scanner_name": scanner["name"],
-            "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "generated_at": datetime.datetime.now(chart_connector.IST).strftime("%d %b, %I:%M %p"),
             "error": str(exc),
         }), 502
 
     entry = cache.peek(cache_key)
     generated_at = (
-        datetime.datetime.fromtimestamp(entry["cached_at"]).isoformat(timespec="seconds")
-        if entry else datetime.datetime.now().isoformat(timespec="seconds")
+        datetime.datetime.fromtimestamp(entry["cached_at"], tz=chart_connector.IST).strftime("%d %b, %I:%M %p")
+        if entry else datetime.datetime.now(chart_connector.IST).strftime("%d %b, %I:%M %p")
     )
 
     result = dict(result)

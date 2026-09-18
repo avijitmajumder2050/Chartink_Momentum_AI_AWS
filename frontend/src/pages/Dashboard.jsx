@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { formatISTDateTime } from "../utils/formatDate";
 
 // Ported from templates/subscriber_dashboard.html. New GET /api/dashboard/
 // bootstrap (app.py) replaces the fast synchronous part that used to be
@@ -245,7 +246,7 @@ export default function Dashboard() {
                     <div className="notif-card-body">
                       <div className="notif-card-top">
                         <span className="notif-card-title">{a.title}</span>
-                        <span className="notif-card-time">{a.sent_at.slice(0, 16).replace("T", " ")}</span>
+                        <span className="notif-card-time">{formatISTDateTime(a.sent_at)}</span>
                       </div>
                       <div className="notif-card-message">{linkifyAlertBody(a.body)}</div>
                     </div>
