@@ -1450,6 +1450,24 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
             results.append({"symbol": symbol, "ok": False, "reason": str(exc)})
             continue
 
+        # Being added here is itself news — until now, a subscriber heard
+        # NOTHING about this stock until (and unless) price later actually
+        # crossed entry_price, minutes or hours after the setup was
+        # identified. This complements, not replaces, the alert-tracking
+        # bot's own "entry_triggered" notification below — one says
+        # "watch this," the other says "it just happened."
+        try:
+            _send_campaign_notification(
+                f"👀 New watch — {symbol}",
+                f"{symbol} qualified for a breakout setup: watch for a break above ₹{entry_price:.2f} (SL ₹{sl_price:.2f}).",
+                ALERT_MONITOR_AUDIENCE,
+                entry_symbols=[symbol],
+                channels=("in_app", "push") if fcm_connector.is_configured() else ("in_app",),
+                sent_by=created_by,
+            )
+        except Exception as exc:
+            print(f"[breakout-entries] new-watch notify failed for {symbol}: {exc}", file=sys.stderr)
+
         results.append({"symbol": symbol, "ok": True, "entryPrice": entry_price, "slPrice": sl_price, "entry": entry})
 
     return results
