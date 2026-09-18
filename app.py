@@ -1392,24 +1392,17 @@ def api_admin_create_entry():
     return jsonify({"ok": True, "entry": _entry_json_safe(entry)})
 
 
-@app.post("/api/admin/scanner-campaign/breakout-entries")
-@role_required("admin")
-def api_admin_create_breakout_entries():
-    """Batch-creates campaign entries for a set of stocks (picked by the
-    admin from the First-Minute Gainers/Losers scanner's rows) using a
-    2-candle breakout-pullback rule: entry = the first opening candle's
-    high, stop-loss = the second candle's low — only for stocks whose
-    second candle actually closed red (a pullback), the setup this rule is
-    meant for. Each entry then gets tracked exactly like any other (see
-    the alert-tracking bot below) — one add here can cover many stocks at
-    once, each notified independently the moment its own entry/SL is hit,
-    same as any other campaign entry."""
-    user = _current_user()
-    data = request.get_json(silent=True) or {}
-    symbols = sorted({(s or "").strip().upper() for s in (data.get("symbols") or []) if (s or "").strip()})
-    if not symbols:
-        return jsonify({"error": "Select at least one stock."}), 400
-
+def _create_breakout_entries_for_symbols(symbols, created_by):
+    """Shared by the admin's manual "+ Breakout alert" action (api_admin_
+    create_breakout_entries below) and the automatic morning bot
+    (_auto_create_breakout_alerts) — same 2-candle breakout-pullback rule
+    either way: entry = the first opening candle's high, stop-loss = the
+    second candle's low, only for stocks whose second candle actually
+    closed red (a pullback). Each entry created then gets tracked exactly
+    like any other (see the alert-tracking bot below) — covering many
+    stocks at once means each is notified independently the moment its
+    own entry/SL is hit, same as any other campaign entry. Returns a list
+    of {symbol, ok, ...} — never raises for an individual symbol."""
     today = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
     resolved, _unresolved = dhan_connector.resolve_security_ids(symbols)
 
@@ -1451,14 +1444,35 @@ def api_admin_create_breakout_entries():
                 ),
                 source="first_minute_movers",
                 entry_type="momentum",
-                created_by=user["email"],
+                created_by=created_by,
             )
         except campaign_connector.CampaignError as exc:
             results.append({"symbol": symbol, "ok": False, "reason": str(exc)})
             continue
 
-        results.append({"symbol": symbol, "ok": True, "entryPrice": entry_price, "slPrice": sl_price, "entry": _entry_json_safe(entry)})
+        results.append({"symbol": symbol, "ok": True, "entryPrice": entry_price, "slPrice": sl_price, "entry": entry})
 
+    return results
+
+
+@app.post("/api/admin/scanner-campaign/breakout-entries")
+@role_required("admin")
+def api_admin_create_breakout_entries():
+    """Batch-creates campaign entries for a set of stocks the admin picked
+    by hand from the First-Minute Gainers/Losers scanner's rows — see
+    _create_breakout_entries_for_symbols for the actual rule. AUTO_
+    BREAKOUT_ENABLED's automatic version (below) covers "just do this for
+    me every morning" instead."""
+    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    symbols = sorted({(s or "").strip().upper() for s in (data.get("symbols") or []) if (s or "").strip()})
+    if not symbols:
+        return jsonify({"error": "Select at least one stock."}), 400
+
+    results = _create_breakout_entries_for_symbols(symbols, created_by=user["email"])
+    for r in results:
+        if r.get("ok"):
+            r["entry"] = _entry_json_safe(r["entry"])
     return jsonify({"results": results})
 
 
@@ -1693,6 +1707,51 @@ ALERT_MILESTONES = ["entry_triggered", "profit_2pct", "rr_1_1", "rr_1_2", "sl_hi
 ALERT_MONITOR_AUDIENCE = ["pro", "premium"]
 ALERT_MONITOR_INTERVAL_SECONDS = 5 * 60
 
+# Automatic version of the admin's manual "+ Breakout alert" action (see
+# _create_breakout_entries_for_symbols) — once each morning, takes the top
+# AUTO_BREAKOUT_TOP_N gainers from the First-Minute Gainers/Losers scanner
+# and applies the same 2-candle breakout-pullback rule, with no admin click
+# needed. Window: the 2nd candle needs INTERVAL_MINUTES*2 after 09:15 to
+# have actually formed (09:25 for the current 5-min interval), and this
+# only makes sense as a same-morning signal — a late-afternoon run using
+# hours-old opening candles would be pointless, not just redundant.
+AUTO_BREAKOUT_ENABLED = True
+AUTO_BREAKOUT_TOP_N = 4
+AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02d}"
+AUTO_BREAKOUT_WINDOW_END = "10:30"
+_auto_breakout_state = {"date": None, "done": False}
+
+
+def _auto_create_breakout_alerts():
+    if not AUTO_BREAKOUT_ENABLED:
+        return
+
+    now = datetime.datetime.now(chart_connector.IST)
+    today_str = now.strftime("%Y-%m-%d")
+    if _auto_breakout_state["date"] != today_str:
+        _auto_breakout_state["date"] = today_str
+        _auto_breakout_state["done"] = False
+
+    if _auto_breakout_state["done"]:
+        return
+    now_hm = now.strftime("%H:%M")
+    if not (AUTO_BREAKOUT_WINDOW_START <= now_hm <= AUTO_BREAKOUT_WINDOW_END):
+        return
+
+    try:
+        gainers_df, _losers_df = first_minute_mod.get_first_minute_gainers_losers(top_n=AUTO_BREAKOUT_TOP_N)
+    except Exception as exc:
+        print(f"[auto-breakout] scan failed: {exc}", file=sys.stderr)
+        return
+
+    if gainers_df.empty:
+        return  # market may not be open yet / no data — retried next tick within the window
+
+    symbols = gainers_df.head(AUTO_BREAKOUT_TOP_N)["Stock Name"].tolist()
+    results = _create_breakout_entries_for_symbols(symbols, created_by="auto-breakout-bot")
+    _auto_breakout_state["done"] = True  # once per day regardless of outcome — see module docstring above
+    print(f"[auto-breakout] {today_str} top {AUTO_BREAKOUT_TOP_N} gainers {symbols}: {results}", file=sys.stderr)
+
 
 def _milestones_reached(entry_price, sl_price, current_price):
     """Every milestone `current_price` currently qualifies for — not just
@@ -1832,6 +1891,7 @@ def _alert_monitor_loop():
         try:
             if _market_status().startswith("Markets open"):
                 _check_and_notify_active_entries()
+                _auto_create_breakout_alerts()
         except Exception as exc:
             print(f"[alert-monitor] check cycle failed: {exc}", file=sys.stderr)
         time.sleep(ALERT_MONITOR_INTERVAL_SECONDS)
