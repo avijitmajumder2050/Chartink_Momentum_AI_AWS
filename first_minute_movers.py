@@ -15,20 +15,22 @@ Two stages, not one straight scan of the whole watchlist:
    reasonable HTTP request timeout. chart_connector.get_live_snapshot_
    batch() reuses the SAME batched/cached live-quote call every other live
    price on this site already makes — one cheap request covers the whole
-   watchlist — to both drop illiquid names (MIN_VOLUME) and rank the rest
-   by live % move so far today, with only the most extreme ~15 on each
-   side becoming candidates. Filtering here, not just at the end, matters:
-   a handful of shares trading hands can move a thinly-traded stock's price
-   several percent on noise alone, and without this an illiquid name would
-   otherwise crowd out a real, tradeable mover.
+   watchlist — to rank every stock by its live % move so far today, with
+   only the most extreme ~20 on each side becoming candidates. This step
+   only ranks; it deliberately does NOT filter by volume (day-cumulative
+   volume from a live quote doesn't tell you anything about the opening
+   candle itself), so the pool is kept larger than the final top_n to
+   leave enough headroom for step 2's real filter to drop some.
 
-2. Verify precisely. Only for that short candidate list, dhan_connector.
-   get_opening_move() is called (one throttled, retried Dhan request per
-   candidate) to get the REAL first-candle close and previous session
-   close — the actual numbers reported come from here, not the cheap
-   shortlist step. A stock that hasn't moved live yet almost never turns
-   out to be an early mover either, so this rarely misses a genuine
-   top-10, while keeping the whole scan to ~30 Dhan calls instead of ~700.
+2. Verify precisely, and filter by the RIGHT volume. Only for that short
+   candidate list, dhan_connector.get_opening_move() is called (one
+   throttled, retried Dhan request per candidate) to get the REAL
+   first-candle OHLCV and previous session close — the actual numbers
+   reported come from here, not the cheap shortlist step. Candidates whose
+   first candle traded under MIN_CANDLE_VOLUME are dropped here: a handful
+   of shares changing hands in a thin name can move its price several
+   percent on noise alone, and that's only visible once the real candle's
+   own volume is known, not from a day-cumulative proxy.
 """
 
 import logging
@@ -47,17 +49,21 @@ IST = pytz.timezone("Asia/Kolkata")
 # candle. One of Dhan's supported intraday intervals: 1, 5, 15, 25, 60.
 INTERVAL_MINUTES = 5
 
-# Liquidity floor — today's cumulative volume so far must be at least this
-# to be considered at all, so a handful of shares changing hands in a thin
-# name can't fake a "top mover" spot. Same 70,000 bar dhan_ema_breakout.py
-# already uses for its own volume filter, kept consistent rather than
-# picked fresh.
-MIN_VOLUME = 70_000
+# Liquidity floor on the first candle's OWN volume (not the day's
+# cumulative volume so far — that says nothing about how actively the
+# opening candle itself traded). A handful of shares changing hands in a
+# thin name can move its price several percent on noise alone; this is
+# what actually screens that out.
+MIN_CANDLE_VOLUME = 20_000
 
 # How many candidates to verify precisely on each side (gainers/losers) —
-# comfortably more than top_n so a shortlisting miss still leaves enough
-# real candidates to fill a top 10.
-CANDIDATE_POOL = 15
+# comfortably more than top_n so a shortlisting miss, or a candidate later
+# dropped for thin first-candle volume, still leaves enough to fill a
+# top 10. In practice a large fraction of shortlisted candidates get
+# dropped for MIN_CANDLE_VOLUME (verified live: only 15 of 40 candidates
+# survived at CANDIDATE_POOL=20, leaving one side short of a full top 10),
+# so this needs real headroom, not just a small margin over top_n.
+CANDIDATE_POOL = 30
 
 # Dhan's intraday endpoint's rate limit (see module docstring) — modest on
 # purpose even though only ~30 calls are made now, not assumed safe.
@@ -82,6 +88,9 @@ def _verify_one(symbol, security_id, date_str, day_volume):
 
     prev_close, candle = move["prev_close"], move["first_candle"]
     if prev_close is None or candle is None:
+        return None
+
+    if candle["volume"] < MIN_CANDLE_VOLUME:
         return None
 
     change_pct = _pct_change(prev_close, candle["close"])
@@ -121,21 +130,21 @@ def get_first_minute_gainers_losers(top_n=10):
         logger.info("Skipping %s unresolved symbols", len(unresolved))
 
     snapshot = chart_connector.get_live_snapshot_batch(resolved.values())
-    liquid = sorted(
+    ranked = sorted(
         (
             (symbol, sid, snapshot[sid]["changePct"], snapshot[sid]["volume"])
             for symbol, sid in resolved.items()
-            if sid in snapshot and snapshot[sid]["volume"] >= MIN_VOLUME
+            if sid in snapshot
         ),
         key=lambda row: row[2],
     )
-    logger.info("%s of %s resolved stocks pass the %s-volume liquidity filter", len(liquid), len(resolved), MIN_VOLUME)
+    logger.info("Live quotes available for %s of %s resolved stocks", len(ranked), len(resolved))
 
-    loser_candidates = liquid[:CANDIDATE_POOL]
-    gainer_candidates = liquid[-CANDIDATE_POOL:]
+    loser_candidates = ranked[:CANDIDATE_POOL]
+    gainer_candidates = ranked[-CANDIDATE_POOL:]
     candidates = {}
-    for symbol, sid, _, volume in loser_candidates + gainer_candidates:
-        candidates[symbol] = (sid, volume)
+    for symbol, sid, _, day_volume in loser_candidates + gainer_candidates:
+        candidates[symbol] = (sid, day_volume)
 
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
