@@ -12,11 +12,15 @@ Two stages, not one straight scan of the whole watchlist:
    confirmed-live rate limit (DH-904 "Too many requests") — scanning all
    ~350 watchlist stocks individually (each needing its own API call, no
    batch mode exists for it) would take minutes and blow well past any
-   reasonable HTTP request timeout. chart_connector.get_live_change_pct_
+   reasonable HTTP request timeout. chart_connector.get_live_snapshot_
    batch() reuses the SAME batched/cached live-quote call every other live
    price on this site already makes — one cheap request covers the whole
-   watchlist — to rank every stock by its live % move so far today, and
-   only the most extreme ~15 on each side become candidates.
+   watchlist — to both drop illiquid names (MIN_VOLUME) and rank the rest
+   by live % move so far today, with only the most extreme ~15 on each
+   side becoming candidates. Filtering here, not just at the end, matters:
+   a handful of shares trading hands can move a thinly-traded stock's price
+   several percent on noise alone, and without this an illiquid name would
+   otherwise crowd out a real, tradeable mover.
 
 2. Verify precisely. Only for that short candidate list, dhan_connector.
    get_opening_move() is called (one throttled, retried Dhan request per
@@ -43,6 +47,13 @@ IST = pytz.timezone("Asia/Kolkata")
 # candle. One of Dhan's supported intraday intervals: 1, 5, 15, 25, 60.
 INTERVAL_MINUTES = 5
 
+# Liquidity floor — today's cumulative volume so far must be at least this
+# to be considered at all, so a handful of shares changing hands in a thin
+# name can't fake a "top mover" spot. Same 70,000 bar dhan_ema_breakout.py
+# already uses for its own volume filter, kept consistent rather than
+# picked fresh.
+MIN_VOLUME = 70_000
+
 # How many candidates to verify precisely on each side (gainers/losers) —
 # comfortably more than top_n so a shortlisting miss still leaves enough
 # real candidates to fill a top 10.
@@ -62,7 +73,7 @@ def _pct_change(prev_close, current):
     return round((current - prev_close) / prev_close * 100, 2)
 
 
-def _verify_one(symbol, security_id, date_str):
+def _verify_one(symbol, security_id, date_str, day_volume):
     try:
         move = dhan_connector.get_opening_move(security_id, date_str, interval=INTERVAL_MINUTES)
     except Exception as exc:
@@ -86,6 +97,7 @@ def _verify_one(symbol, security_id, date_str):
         "Low": round(candle["low"], 2),
         "Close": round(candle["close"], 2),
         "Volume": candle["volume"],
+        "Day Volume": day_volume,
         "Change %": change_pct,
         "First Candle Time": candle["time"],
     }
@@ -108,24 +120,28 @@ def get_first_minute_gainers_losers(top_n=10):
     if unresolved:
         logger.info("Skipping %s unresolved symbols", len(unresolved))
 
-    live_change = chart_connector.get_live_change_pct_batch(resolved.values())
-    ranked = sorted(
-        ((symbol, sid, live_change[sid]) for symbol, sid in resolved.items() if sid in live_change),
+    snapshot = chart_connector.get_live_snapshot_batch(resolved.values())
+    liquid = sorted(
+        (
+            (symbol, sid, snapshot[sid]["changePct"], snapshot[sid]["volume"])
+            for symbol, sid in resolved.items()
+            if sid in snapshot and snapshot[sid]["volume"] >= MIN_VOLUME
+        ),
         key=lambda row: row[2],
     )
-    logger.info("Live quotes available for %s of %s resolved stocks", len(ranked), len(resolved))
+    logger.info("%s of %s resolved stocks pass the %s-volume liquidity filter", len(liquid), len(resolved), MIN_VOLUME)
 
-    loser_candidates = ranked[:CANDIDATE_POOL]
-    gainer_candidates = ranked[-CANDIDATE_POOL:]
+    loser_candidates = liquid[:CANDIDATE_POOL]
+    gainer_candidates = liquid[-CANDIDATE_POOL:]
     candidates = {}
-    for symbol, sid, _ in loser_candidates + gainer_candidates:
-        candidates[symbol] = sid
+    for symbol, sid, _, volume in loser_candidates + gainer_candidates:
+        candidates[symbol] = (sid, volume)
 
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = []
-        for symbol, security_id in candidates.items():
-            futures.append(pool.submit(_verify_one, symbol, security_id, date_str))
+        for symbol, (security_id, volume) in candidates.items():
+            futures.append(pool.submit(_verify_one, symbol, security_id, date_str, volume))
             time.sleep(SUBMIT_STAGGER_SECONDS)
         for future in futures:
             row = future.result()

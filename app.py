@@ -308,6 +308,7 @@ def run_first_minute_movers():
             _col("High", f"High ({candle_label})", "num"),
             _col("Low", f"Low ({candle_label})", "num"),
             _col("Volume", f"Volume ({candle_label})", "num"),
+            _col("Day Volume", "Volume (day, so far)", "num"),
             _col("First Candle Time", "Candle Time"),
         ],
         "rows": rows,
@@ -338,7 +339,8 @@ SCANNERS = {
         "description": (
             "Top 10 gainers and top 10 losers by % change of each stock's "
             "first 5-minute candle (09:15-09:20 IST) vs the previous "
-            "session's close — an early read on opening momentum, not a "
+            "session's close, restricted to volume > 70,000 so far today — "
+            "an early read on opening momentum in liquid names, not a "
             "full-day scan"
         ),
         "run": run_first_minute_movers,
