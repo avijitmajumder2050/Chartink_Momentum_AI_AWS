@@ -26,7 +26,7 @@ import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import mock_data
-from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
+from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
 
 app = Flask(__name__)
 app.secret_key = secrets.get_parameter("/chartink-momentum-ai/flask_secret_key")
@@ -1390,6 +1390,76 @@ def api_admin_create_entry():
     except campaign_connector.CampaignError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"ok": True, "entry": _entry_json_safe(entry)})
+
+
+@app.post("/api/admin/scanner-campaign/breakout-entries")
+@role_required("admin")
+def api_admin_create_breakout_entries():
+    """Batch-creates campaign entries for a set of stocks (picked by the
+    admin from the First-Minute Gainers/Losers scanner's rows) using a
+    2-candle breakout-pullback rule: entry = the first opening candle's
+    high, stop-loss = the second candle's low — only for stocks whose
+    second candle actually closed red (a pullback), the setup this rule is
+    meant for. Each entry then gets tracked exactly like any other (see
+    the alert-tracking bot below) — one add here can cover many stocks at
+    once, each notified independently the moment its own entry/SL is hit,
+    same as any other campaign entry."""
+    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    symbols = sorted({(s or "").strip().upper() for s in (data.get("symbols") or []) if (s or "").strip()})
+    if not symbols:
+        return jsonify({"error": "Select at least one stock."}), 400
+
+    today = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
+    resolved, _unresolved = dhan_connector.resolve_security_ids(symbols)
+
+    results = []
+    for symbol in symbols:
+        security_id = resolved.get(symbol)
+        if security_id is None:
+            results.append({"symbol": symbol, "ok": False, "reason": "Symbol not found."})
+            continue
+
+        try:
+            move = dhan_connector.get_opening_move(security_id, today, interval=first_minute_mod.INTERVAL_MINUTES)
+        except Exception as exc:
+            results.append({"symbol": symbol, "ok": False, "reason": str(exc)})
+            continue
+
+        first_candle, second_candle = move["first_candle"], move["second_candle"]
+        if first_candle is None:
+            results.append({"symbol": symbol, "ok": False, "reason": "First candle hasn't formed yet."})
+            continue
+        if second_candle is None:
+            results.append({"symbol": symbol, "ok": False, "reason": f"Second candle hasn't formed yet - try again after the {first_minute_mod.INTERVAL_MINUTES * 2}-minute mark."})
+            continue
+        if second_candle["close"] >= second_candle["open"]:
+            results.append({"symbol": symbol, "ok": False, "reason": "Second candle isn't red - this setup only applies to a pullback."})
+            continue
+
+        entry_price = first_candle["high"]
+        sl_price = second_candle["low"]
+        try:
+            entry = campaign_connector.create_entry(
+                symbol=symbol,
+                entry_price=entry_price,
+                sl_price=sl_price,
+                target_price=None,
+                note=(
+                    f"Breakout setup: {first_minute_mod.INTERVAL_MINUTES}-min opening candle high "
+                    f"{entry_price:.2f} (entry), pullback candle low {sl_price:.2f} (SL)"
+                ),
+                source="first_minute_movers",
+                entry_type="momentum",
+                created_by=user["email"],
+            )
+        except campaign_connector.CampaignError as exc:
+            results.append({"symbol": symbol, "ok": False, "reason": str(exc)})
+            continue
+
+        results.append({"symbol": symbol, "ok": True, "entryPrice": entry_price, "slPrice": sl_price, "entry": _entry_json_safe(entry)})
+
+    return jsonify({"results": results})
 
 
 @app.post("/api/admin/campaign-entries/<entry_id>/update")

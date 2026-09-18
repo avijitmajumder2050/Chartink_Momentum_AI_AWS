@@ -196,58 +196,57 @@ def _fetch_intraday_minute(security_id, from_date, to_date, interval=1, max_retr
     })
 
 
+def _row_to_candle(row):
+    return {
+        "time": row["time"].strftime("%H:%M"),
+        "open": float(row["open"]),
+        "high": float(row["high"]),
+        "low": float(row["low"]),
+        "close": float(row["close"]),
+        "volume": float(row["volume"]),
+    }
+
+
 def _fetch_opening_move(security_id, date_str, lookback_days=6, interval=1):
     to_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     from_date = to_date - timedelta(days=lookback_days)
     # One intraday call spanning several days back through today's open
-    # derives BOTH the previous session's close (its last candle at this
-    # interval) and today's first candle — half the Dhan calls of fetching
-    # them separately (historical_daily_data + intraday_minute_data), which
+    # derives the previous session's close (its last candle at this
+    # interval) AND today's first two candles — one Dhan call instead of
+    # historical_daily_data + intraday_minute_data separately, which
     # matters a lot given this endpoint's confirmed-live rate limit and
     # that callers here (first_minute_movers.py) need this for many stocks
-    # in one HTTP request. The window end (09:30) comfortably covers the
-    # first candle regardless of interval (1/5/15/25/60 minutes) — only
-    # the very first row on `date_str` is actually used.
-    df = _fetch_intraday_minute(security_id, f"{from_date.isoformat()} 09:15:00", f"{date_str} 09:30:00", interval=interval)
+    # in one HTTP request. The window end (09:35) comfortably covers the
+    # first two candles regardless of interval (1/5/15/25/60 minutes).
+    df = _fetch_intraday_minute(security_id, f"{from_date.isoformat()} 09:15:00", f"{date_str} 09:35:00", interval=interval)
     if df.empty:
-        return {"prev_close": None, "first_candle": None}
+        return {"prev_close": None, "first_candle": None, "second_candle": None}
 
     day = df["time"].dt.strftime("%Y-%m-%d")
     prior = df[day < date_str]
     prev_close = float(prior.iloc[-1]["close"]) if not prior.empty else None
 
     today_rows = df[day == date_str]
-    if today_rows.empty:
-        first_candle = None
-    else:
-        first = today_rows.iloc[0]
-        first_candle = {
-            "time": first["time"].strftime("%H:%M"),
-            "open": float(first["open"]),
-            "high": float(first["high"]),
-            "low": float(first["low"]),
-            "close": float(first["close"]),
-            "volume": float(first["volume"]),
-        }
+    first_candle = _row_to_candle(today_rows.iloc[0]) if len(today_rows) >= 1 else None
+    second_candle = _row_to_candle(today_rows.iloc[1]) if len(today_rows) >= 2 else None
 
-    return {"prev_close": prev_close, "first_candle": first_candle}
+    return {"prev_close": prev_close, "first_candle": first_candle, "second_candle": second_candle}
 
 
 def get_opening_move(security_id, date_str, interval=1):
-    """{prev_close, first_candle} for `date_str` (YYYY-MM-DD) — first_candle
-    is {time, open, high, low, close, volume} for the first candle of the
-    day at `interval` minutes (1, 5, 15, 25 or 60 — Dhan's supported
-    intraday intervals; e.g. interval=5 -> the 09:15-09:20 IST candle), or
-    None if the market hasn't opened yet that day (or there's no data at
-    all, e.g. a trading holiday). prev_close is the previous session's
-    last candle close at that same interval, or None if that couldn't be
-    found either.
+    """{prev_close, first_candle, second_candle} for `date_str` (YYYY-MM-DD)
+    — first_candle/second_candle are {time, open, high, low, close, volume}
+    for the first two candles of the day at `interval` minutes (1, 5, 15,
+    25 or 60 — Dhan's supported intraday intervals; e.g. interval=5 -> the
+    09:15-09:20 and 09:20-09:25 IST candles), or None if that candle hasn't
+    formed yet that day (or there's no data at all, e.g. a trading
+    holiday). prev_close is the previous session's last candle close at
+    that same interval, or None if that couldn't be found either.
 
-    A moderate (not full-day) cache TTL is used deliberately: once the
-    first candle has actually formed it never changes again, but a request
-    made before market open legitimately gets first_candle=None, and that
-    shouldn't get pinned as the cached answer for the rest of the day
-    (connectors/cache.py caches failures/None just as eagerly as real
-    results)."""
+    A moderate (not full-day) cache TTL is used deliberately: once a candle
+    has actually formed it never changes again, but a request made before
+    it forms legitimately gets None, and that shouldn't get pinned as the
+    cached answer for the rest of the day (connectors/cache.py caches
+    failures/None just as eagerly as real results)."""
     key = f"dhan_opening_move_{security_id}_{date_str}_{interval}m"
     return cache.get_or_fetch(key, FIRST_MINUTE_CACHE_TTL_SECONDS, lambda: _fetch_opening_move(security_id, date_str, interval=interval))

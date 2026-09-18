@@ -189,6 +189,49 @@ export default function AdminScannerCampaign() {
     addEntry(payload);
   }
 
+  // ---- Breakout alerts (First-Minute Gainers/Losers scanner only) ----
+  // Selecting rows there and clicking the button computes entry = 1st
+  // opening-candle high, SL = 2nd candle low — server-side, since that
+  // needs the real 2nd candle, which isn't part of the scanner's own
+  // output columns — for each picked stock, skipping any whose 2nd candle
+  // isn't red (the pullback this setup needs) or hasn't formed yet. Every
+  // stock added is then tracked exactly like any other campaign entry, so
+  // picking several notifies each independently as its own entry/SL is hit.
+  const [breakoutSelected, setBreakoutSelected] = useState(() => new Set());
+  const [creatingBreakout, setCreatingBreakout] = useState(false);
+
+  function toggleBreakoutSelected(symbol) {
+    setBreakoutSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(symbol)) next.delete(symbol);
+      else next.add(symbol);
+      return next;
+    });
+  }
+
+  function createBreakoutAlerts() {
+    const symbols = [...breakoutSelected];
+    if (!symbols.length) return;
+    setCreatingBreakout(true);
+    postJson("/api/admin/scanner-campaign/breakout-entries", { symbols }).then((result) => {
+      setCreatingBreakout(false);
+      if (!result.ok) {
+        showMessage(result.data.error || "Couldn't create breakout alerts.", true);
+        return;
+      }
+      const rows = result.data.results || [];
+      const added = rows.filter((r) => r.ok);
+      const skipped = rows.filter((r) => !r.ok);
+      const parts = [];
+      if (added.length) parts.push(`Added ${added.length}: ${added.map((r) => r.symbol).join(", ")}.`);
+      if (skipped.length) parts.push(`Skipped ${skipped.length}: ${skipped.map((r) => `${r.symbol} (${r.reason})`).join("; ")}.`);
+      showMessage(parts.join(" "), added.length === 0);
+      setBreakoutSelected(new Set());
+      loadBootstrap();
+      loadTracker();
+    });
+  }
+
   function addFromAiPick(pick) {
     addEntry({
       symbol: pick.symbol, source: "scanner", type: "momentum",
@@ -551,17 +594,35 @@ export default function AdminScannerCampaign() {
         const priceCol = res?.columns?.find((c) => c.key === "Price" || c.key === "Close");
         const highCol = res?.columns?.find((c) => c.key === "High");
         const lowCol = res?.columns?.find((c) => c.key === "Low");
+        const isBreakoutScanner = s.id === "first_minute_movers";
         return (
           <div key={s.id} style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22, marginBottom: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
               <div>
                 <span style={{ fontSize: 14.5, fontWeight: 700 }}>{s.name}</span>
                 <span style={{ fontSize: 12, color: "#8A90A0", marginLeft: 8 }}>{res?.generatedAt ? `as of ${res.generatedAt}` : "not run yet"}</span>
               </div>
-              <button type="button" disabled={runningScanner === s.id} onClick={() => runScanner(s.id)} style={{ border: "1.5px solid #E3E6EC", background: "#FFFFFF", borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                {runningScanner === s.id ? "Running…" : "Run scanner"}
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {isBreakoutScanner && breakoutSelected.size > 0 && (
+                  <button
+                    type="button"
+                    disabled={creatingBreakout}
+                    onClick={createBreakoutAlerts}
+                    style={{ background: "#4640DE", color: "white", border: "none", borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    {creatingBreakout ? "Adding…" : `+ Breakout alert (${breakoutSelected.size})`}
+                  </button>
+                )}
+                <button type="button" disabled={runningScanner === s.id} onClick={() => runScanner(s.id)} style={{ border: "1.5px solid #E3E6EC", background: "#FFFFFF", borderRadius: 9, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                  {runningScanner === s.id ? "Running…" : "Run scanner"}
+                </button>
+              </div>
             </div>
+            {isBreakoutScanner && res?.rows?.length > 0 && (
+              <p style={{ fontSize: 11.5, color: "#8A90A0", margin: "0 0 10px" }}>
+                Check stocks below, then "+ Breakout alert" — entry = 1st candle high, SL = 2nd candle low, only added for stocks whose 2nd candle closed red (a pullback).
+              </p>
+            )}
             {!res || !res.rows?.length ? (
               <p style={{ fontSize: 12.5, color: "#8A90A0", margin: "6px 0 0" }}>No cached result — click "Run scanner".</p>
             ) : (
@@ -569,6 +630,7 @@ export default function AdminScannerCampaign() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
+                    {isBreakoutScanner && <th style={{ width: 24, padding: "6px 8px" }} />}
                     {columns.map((c) => <th key={c.key} style={{ textAlign: "left", fontSize: 10.5, color: "#8A90A0", textTransform: "uppercase", padding: "6px 8px" }}>{c.label}</th>)}
                     <th />
                   </tr>
@@ -576,6 +638,15 @@ export default function AdminScannerCampaign() {
                 <tbody>
                   {res.rows.map((row, i) => (
                     <tr key={i}>
+                      {isBreakoutScanner && (
+                        <td style={{ padding: "6px 8px", borderTop: "1px solid #F0F1F4" }}>
+                          <input
+                            type="checkbox"
+                            checked={breakoutSelected.has(row[symbolCol?.key])}
+                            onChange={() => toggleBreakoutSelected(row[symbolCol?.key])}
+                          />
+                        </td>
+                      )}
                       {columns.map((c) => (
                         <td key={c.key} style={{ padding: "6px 8px", fontSize: 12.5, borderTop: "1px solid #F0F1F4" }}>
                           {c.type === "symbol" ? (
