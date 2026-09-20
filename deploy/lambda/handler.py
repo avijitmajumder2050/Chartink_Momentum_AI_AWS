@@ -19,7 +19,7 @@ import time
 import boto3
 
 REGION = "ap-south-1"
-INSTANCE_ID = "i-035c10ae55c3f8b9c"
+INSTANCE_ID = "i-0f85d60f510f41fbf"
 DISTRIBUTION_ID = "E3SG9FAP3WCJBZ"
 EC2_ORIGIN_ID = "ec2-backend"
 TRIGGER_KEY_PARAM = "/chartink-momentum-ai/scheduler_trigger_key"
