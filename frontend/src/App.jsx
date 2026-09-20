@@ -13,6 +13,7 @@ import ChartWall from "./pages/ChartWall";
 import Callback from "./auth/Callback";
 import RequireAuth from "./auth/RequireAuth";
 import RequireAdmin from "./auth/RequireAdmin";
+import RequireSubscription from "./auth/RequireSubscription";
 import AdminLayout from "./components/AdminLayout";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
@@ -33,11 +34,39 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<Home />} />
         <Route path="/capabilities" element={<Capabilities />} />
-        <Route path="/scanner" element={<Scanner />} />
-        <Route path="/markets/chart" element={<Chart />} />
+        <Route
+          path="/scanner"
+          element={
+            <RequireSubscription>
+              <Scanner />
+            </RequireSubscription>
+          }
+        />
+        <Route
+          path="/markets/chart"
+          element={
+            <RequireSubscription>
+              <Chart />
+            </RequireSubscription>
+          }
+        />
         <Route path="/news" element={<News />} />
-        <Route path="/markets/ipo-hub" element={<IpoHub />} />
-        <Route path="/markets/research" element={<Research />} />
+        <Route
+          path="/markets/ipo-hub"
+          element={
+            <RequireSubscription>
+              <IpoHub />
+            </RequireSubscription>
+          }
+        />
+        <Route
+          path="/markets/research"
+          element={
+            <RequireSubscription>
+              <Research />
+            </RequireSubscription>
+          }
+        />
         <Route
           path="/subscription"
           element={
@@ -54,7 +83,14 @@ export default function App() {
             </RequireAuth>
           }
         />
-        <Route path="/markets/chart-wall" element={<ChartWall />} />
+        <Route
+          path="/markets/chart-wall"
+          element={
+            <RequireSubscription>
+              <ChartWall />
+            </RequireSubscription>
+          }
+        />
 
         <Route
           path="/admin"

@@ -171,6 +171,28 @@ def role_required(*roles):
     return decorator
 
 
+def subscription_required(view):
+    """Like login_required, but also requires a paid plan (pro or
+    premium) — admins always pass regardless of their own plan, same
+    "admin can see everything" convention role_required already applies
+    elsewhere. Gates the Markets sub-pages (IPO Hub, Stock Research,
+    Scanner, Chart, Chart Wall) to paying subscribers server-side, not
+    just via the frontend's RequireSubscription route guard — that guard
+    alone wouldn't stop a signed-in free-plan user from calling these
+    APIs directly."""
+    @functools.wraps(view)
+    def wrapped(*args, **kwargs):
+        user = _current_user()
+        if user is None:
+            return jsonify({"error": "Not authenticated."}), 401
+        if user["role"] != "admin":
+            plan = subscription_connector.get_subscription(user["email"]).get("plan", "free")
+            if plan not in ("pro", "premium"):
+                return jsonify({"error": "This requires a Pro or Premium subscription."}), 403
+        return view(*args, **kwargs)
+    return wrapped
+
+
 @app.get("/api/auth/me")
 def api_auth_me():
     """Current signed-in identity for the React SPA — replaces what Jinja's
@@ -441,6 +463,7 @@ def api_news():
 
 
 @app.get("/api/ipo-hub")
+@subscription_required
 def api_ipo_hub():
     try:
         data = ipo_connector.get_ipo_hub_data()
@@ -451,6 +474,7 @@ def api_ipo_hub():
 
 
 @app.get("/api/watchlist")
+@subscription_required
 def api_watchlist():
     """Was only ever baked into server-rendered chart_wall.html before —
     same fetch chart_wall_page() used, now available standalone."""
@@ -463,6 +487,7 @@ def api_watchlist():
 
 
 @app.get("/api/research")
+@subscription_required
 def api_research():
     """Mirrors research()'s exact orchestration (4 connectors, layered
     best-effort fallbacks) as JSON instead of a render — same flat shape
@@ -506,6 +531,7 @@ def api_research():
 
 
 @app.get("/api/chart/bootstrap")
+@subscription_required
 def api_chart_bootstrap():
     """Symbol-list + default-symbol resolution for the Chart page — was
     only ever inline in chart_page() before; /api/chart/data (below)
@@ -521,6 +547,7 @@ def api_chart_bootstrap():
 
 
 @app.get("/api/chart/data")
+@subscription_required
 def api_chart_data():
     symbol = _normalize_symbol(request.args.get("symbol"))
     try:
@@ -2310,6 +2337,7 @@ def firebase_messaging_sw():
 # ============================================================
 
 @app.get("/api/scanners")
+@subscription_required
 def api_scanners():
 
     return jsonify([
@@ -2323,6 +2351,7 @@ def _scanner_cache_key(scanner_id):
 
 
 @app.get("/api/scanners/<scanner_id>/cached")
+@subscription_required
 def api_cached_scanner(scanner_id):
     """Last cached result for a scanner, if any — never triggers a live
     run, so selecting a scanner can show its last-known result instantly
@@ -2346,6 +2375,7 @@ def api_cached_scanner(scanner_id):
 
 
 @app.get("/api/scanners/<scanner_id>/run")
+@subscription_required
 def api_run_scanner(scanner_id):
 
     scanner = SCANNERS.get(scanner_id)
