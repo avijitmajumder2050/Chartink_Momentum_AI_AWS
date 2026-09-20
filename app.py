@@ -1732,7 +1732,12 @@ ALERT_MONITOR_INTERVAL_SECONDS = 5 * 60
 # needed. Window: the 2nd candle needs INTERVAL_MINUTES*2 after 09:15 to
 # have actually formed (09:25 for the current 5-min interval), and this
 # only makes sense as a same-morning signal — a late-afternoon run using
-# hours-old opening candles would be pointless, not just redundant.
+# hours-old opening candles would be pointless, not just redundant. Called
+# from _breakout_watch_loop (below), NOT this alert-monitor's own slower
+# loop — the "does it qualify yet" retry and the post-qualify "has it
+# broken out yet" race both run on the same fast 1-minute cadence, so a
+# stock that only just qualifies doesn't sit up to 5 minutes before its
+# first breakout check.
 AUTO_BREAKOUT_ENABLED = True
 AUTO_BREAKOUT_TOP_N = 4
 AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02d}"
@@ -1741,9 +1746,10 @@ _auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved"
 
 
 def _auto_create_breakout_alerts():
-    """Runs on every alert-monitor tick (every ALERT_MONITOR_INTERVAL_
-    SECONDS while markets are open) but only actually does anything within
-    the AUTO_BREAKOUT_WINDOW_START..END IST window, and only once per
+    """Runs on every breakout-watch tick (every BREAKOUT_WATCH_INTERVAL_
+    SECONDS while markets are open — see _breakout_watch_loop) but only
+    actually does anything within the AUTO_BREAKOUT_WINDOW_START..END
+    IST window, and only once per
     calendar day overall — tracked in _auto_breakout_state, not a one-shot
     flag set after the very first attempt: the top-N gainer list is frozen
     the first tick data is available (so a shifting ranking across ticks
@@ -1972,7 +1978,6 @@ def _alert_monitor_loop():
         try:
             if _market_status().startswith("Markets open"):
                 _check_and_notify_active_entries()
-                _auto_create_breakout_alerts()
         except Exception as exc:
             print(f"[alert-monitor] check cycle failed: {exc}", file=sys.stderr)
         time.sleep(ALERT_MONITOR_INTERVAL_SECONDS)
@@ -1985,20 +1990,27 @@ def _start_alert_monitor():
 # ============================================================
 # BREAKOUT-WATCH BOT
 #
-# A second, faster, narrower bot than the general alert-monitor above —
-# only for today's still-pending breakout-source entries (source ==
-# "first_minute_movers", created by _create_breakout_entries_for_symbols,
-# either by hand or the automatic morning bot), and only for the
-# entry_triggered crossing itself, not the slower profit/RR/SL milestones
-# the general bot already covers on its own 5-minute cadence. The general
-# bot would still eventually catch entry_triggered too, just up to
-# BREAKOUT_WATCH_INTERVAL_SECONDS later — this exists specifically to
-# react faster, and to implement "first one wins": once ANY pending
-# breakout-batch stock actually crosses its entry price, every OTHER
-# still-pending one from that same batch is deactivated immediately,
-# rather than potentially also triggering (and getting traded) minutes
-# later. This is a one-trade-from-the-batch design, not "notify
-# everything that eventually triggers."
+# A second, faster, narrower bot than the general alert-monitor above,
+# covering the whole breakout-batch pipeline end to end on one fast
+# (BREAKOUT_WATCH_INTERVAL_SECONDS = 60s) cadence:
+#   1. _auto_create_breakout_alerts() — does today's frozen top-N gainer
+#      pick qualify yet (2nd candle closed red)? Retried here, not on the
+#      general bot's slower 5-minute tick, so a stock isn't sitting
+#      un-checked for up to 5 minutes after its 2nd candle actually closes.
+#   2. _breakout_watch_once() — for whichever of those have already
+#      qualified (source == "first_minute_movers", still pending
+#      entry_triggered), has price crossed the entry yet? The general bot
+#      would still eventually catch entry_triggered too, just up to 5
+#      minutes later — this exists to react faster, and to implement
+#      "first one wins": the moment ANY pending breakout-batch stock
+#      actually crosses its entry price, every OTHER still-pending one
+#      from that same batch is deactivated immediately, rather than
+#      potentially also triggering (and getting traded) minutes later.
+#      One-trade-from-the-batch, not "notify everything that eventually
+#      triggers."
+# Once a stock's entry_triggered fires here, the general bot's own
+# 5-minute cadence takes over for its profit/RR/SL milestones — those
+# don't need the fast loop's responsiveness.
 # ============================================================
 
 BREAKOUT_WATCH_INTERVAL_SECONDS = 60
@@ -2070,6 +2082,13 @@ def _breakout_watch_loop():
     while True:
         try:
             if _market_status().startswith("Markets open"):
+                # Qualify (does today's frozen top-4 pick's 2nd candle turn
+                # out red?) and watch (has a qualified stock's price
+                # crossed its entry?) now share one fast, 1-minute cadence
+                # — a stock that only just qualified gets its first
+                # breakout check on this very same tick, not up to
+                # ALERT_MONITOR_INTERVAL_SECONDS (5 min) later.
+                _auto_create_breakout_alerts()
                 _breakout_watch_once()
         except Exception as exc:
             print(f"[breakout-watch] check cycle failed: {exc}", file=sys.stderr)
