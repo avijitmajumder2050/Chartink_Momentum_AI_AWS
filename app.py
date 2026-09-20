@@ -22,6 +22,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 from flask import Flask, Response, abort, jsonify, request, session
 
+import chartink_daily_hammer as hammer_mod
 import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
@@ -258,6 +259,39 @@ def run_stoch():
     }
 
 
+def run_daily_hammer():
+
+    backtest_df = hammer_mod.get_backtest()
+    live_df = hammer_mod.get_live_scan()
+
+    if backtest_df is None or live_df is None:
+        raise RuntimeError("Scanner did not return data")
+
+    combined_df = hammer_mod.combine_live_and_backtest(
+        live_df, backtest_df, days=7
+    )
+
+    rows = []
+
+    if not combined_df.empty:
+        rows = combined_df.rename(
+            columns={"Backtest_Dates_Last_7": "BacktestDates"}
+        ).to_dict(orient="records")
+
+    return {
+        "stats": [_stat("Match", len(live_df))],
+        "columns": [
+            _col("Stock", "Stock", "symbol"),
+            _col("In_Live_Scan_Today", "In Live Scan", "bool"),
+            _col("Price", "Price", "num"),
+            _col("High", "High", "num"),
+            _col("Low", "Low", "num"),
+            _col("BacktestDates", "Backtest Dates (Last 7 Days)"),
+        ],
+        "rows": rows,
+    }
+
+
 def run_dhan_ema_breakout():
 
     df = dhan_ema_mod.get_ema_breakout_matches()
@@ -323,6 +357,16 @@ SCANNERS = {
             "EMA(50) — live scan combined with the last 10 backtest days"
         ),
         "run": run_stoch,
+    },
+    "daily_hammer": {
+        "name": "Daily Hammer",
+        "description": (
+            "Yesterday's candle: hammer shape (lower shadow > 50% of "
+            "range, body < 30% of range), close crossed above EMA20 or "
+            "EMA50, with EMA10 >= EMA20 >= EMA50 >= EMA200 aligned — live "
+            "scan combined with the last 7 backtest days"
+        ),
+        "run": run_daily_hammer,
     },
     "dhan_ema_breakout": {
         "name": "EMA 10/20 Breakout",
