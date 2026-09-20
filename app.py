@@ -1833,11 +1833,42 @@ def _milestones_reached(entry_price, sl_price, current_price):
     return reached
 
 
+# Position-sizing instruction appended to the entry_triggered notification
+# (below) — full size only when the broader market is actually cooperating
+# (a healthy % of the tracked watchlist advancing today), half size
+# otherwise, so "the tape is working against you" automatically shows up
+# as a smaller suggested position instead of something a subscriber has
+# to separately check market breadth and remember to apply themselves.
+BREADTH_FULL_QTY_THRESHOLD_PCT = 50.0
+
+
+def _market_breadth_positive_pct():
+    """% of the tracked watchlist (~356 stocks) currently advancing —
+    reuses the SAME cached breadth data the dashboard's own Market Breadth
+    card already computes (_dashboard_watchlist_metrics / _breadth_from_
+    metrics), not a separate calculation. None if that data isn't
+    available yet (e.g. very first minutes after this process started,
+    before the 15-min-cached metrics have been fetched once)."""
+    breadth = _breadth_from_metrics(_dashboard_watchlist_metrics())
+    if not breadth or not breadth["sampleSize"]:
+        return None
+    return breadth["advancing"] / breadth["sampleSize"] * 100
+
+
+def _quantity_instruction():
+    pct = _market_breadth_positive_pct()
+    if pct is None:
+        return "Quantity: use your own judgement (market breadth data isn't available right now)."
+    if pct >= BREADTH_FULL_QTY_THRESHOLD_PCT:
+        return f"Quantity: FULL — market breadth is positive ({pct:.0f}% of tracked stocks advancing)."
+    return f"Quantity: HALF (~50%) — market breadth is weak ({pct:.0f}% of tracked stocks advancing)."
+
+
 def _milestone_message(symbol, milestone, entry_price, sl_price, current_price):
     if milestone == "entry_triggered":
         return (
             f"🔔 Entry triggered — {symbol}",
-            f"{symbol} has crossed your entry price of ₹{entry_price:.2f} (now ₹{current_price:.2f}).",
+            f"{symbol} has crossed your entry price of ₹{entry_price:.2f} (now ₹{current_price:.2f}). {_quantity_instruction()}",
         )
     if milestone == "profit_2pct":
         pct = (current_price - entry_price) / entry_price * 100
