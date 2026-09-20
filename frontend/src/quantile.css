@@ -676,6 +676,17 @@ tbody tr:hover { background: var(--surface-2); }
   padding: 14px 22px 4px;
 }
 
+/* .scanner-layout is a fixed-width flex row (272px sidebar + results
+   panel) with no wrap — on a phone that squeezes the results panel and
+   its table into a sliver next to the sidebar instead of stacking. */
+@media (max-width: 900px) {
+  .scanner-layout { flex-direction: column; gap: 14px; }
+  .sidebar { width: 100%; padding: 16px; }
+  .results-head { padding: 16px 16px 12px; }
+  .stats { padding: 0 16px 14px; }
+  th, td { padding: 11px 14px; }
+}
+
 .pill-tab {
   font-size: 13.5px;
   font-weight: 600;
