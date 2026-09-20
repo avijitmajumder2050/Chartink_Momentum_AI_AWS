@@ -9,7 +9,7 @@ backend; everything else routes to the S3-hosted SPA build.
 |---|---|
 | CloudFront distribution | `E3SG9FAP3WCJBZ` — `https://dz1fb1xrtg7b3.cloudfront.net` |
 | Frontend S3 bucket | `quantile-frontend-staging` (private, OAC-only) |
-| Backend EC2 instance | `i-035c10ae55c3f8b9c` (t3.micro), security group `sg-073a1f6cc534ed636` |
+| Backend EC2 instance | `i-0f85d60f510f41fbf` (t3.micro), security group `sg-073a1f6cc534ed636` — the original (`i-035c10ae55c3f8b9c`) was user-terminated 2026-09-18 and this one relaunched from the launch template on 2026-09-20; the scheduler Lambda (`deploy/lambda/handler.py`'s `INSTANCE_ID`) and CloudFront's EC2 origin were both updated to match |
 | EC2 launch template | `quantile-backend-lt` (`lt-0fdfe8cd0e39e71a2`) — documents the instance's exact config; not directly invoked by the daily start/stop, which targets the existing instance |
 | EC2 IAM role | `quantile-staging-ec2-role` / instance profile `quantile-staging-ec2-profile` |
 | Backend systemd service | `quantile-backend` — `gunicorn --workers 1 --threads 4 --timeout 180 --bind 0.0.0.0:8000 wsgi:app` |
@@ -130,6 +130,28 @@ for the systemd service, which the first deploy initially missed —
 connectors/secrets.py and friends fall back to that env var when no
 explicit region is passed, and an instance role carries no region
 info the way a local `AWS_PROFILE` does.
+
+**Gotcha confirmed live (2026-09-20):** the launch template
+(`quantile-backend-lt`) stores its own **snapshot** of user-data taken
+when that template version was created — editing `ec2-userdata.sh` in
+git does NOT retroactively update it. When the original instance was
+terminated and relaunched from this template, the new instance came up
+missing the `--timeout 180` gunicorn flag (added to this file after the
+template's stored version was captured), silently reverting the scanner
+timeout headroom fix until caught and patched by hand. After editing
+`ec2-userdata.sh`, also push a new default launch-template version:
+```
+aws ec2 create-launch-template-version \
+  --launch-template-name quantile-backend-lt \
+  --source-version 1 \
+  --launch-template-data '{"UserData":"'"$(base64 -w0 deploy/ec2-userdata.sh)"'"}' \
+  --region ap-south-1
+aws ec2 modify-launch-template --launch-template-name quantile-backend-lt \
+  --default-version '$Latest' --region ap-south-1
+```
+Otherwise any future relaunch (a real terminate, not just stop/start)
+resurrects whatever config was current when the template was last
+refreshed, not what's in git today.
 
 ## Known gaps / next steps
 
