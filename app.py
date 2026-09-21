@@ -1880,16 +1880,34 @@ def _auto_create_breakout_alerts():
             print(f"[auto-breakout] {today_str}: window closed, still pending: {sorted(unresolved)}", file=sys.stderr)
 
 
-def _milestones_reached(entry_price, sl_price, current_price):
+def _milestones_reached(entry_price, sl_price, current_price, already_entered=False):
     """Every milestone `current_price` currently qualifies for — not just
     the newest one, since a single check can jump straight past several
-    at once (e.g. a gap-up open past both the entry and 1:1 levels)."""
+    at once (e.g. a gap-up open past both the entry and 1:1 levels).
+
+    profit_2pct/rr_1_1/rr_1_2/sl_hit only make sense once the trade has
+    actually been entered. Bug fixed live 2026-09-21: sl_hit used to be
+    checked purely as `current_price <= sl_price`, with no requirement
+    that price had ever crossed entry_price first — a stock whose price
+    fell straight through the SL level without ever rallying up to entry
+    (entry_price is always above sl_price for this app's breakout-entry
+    setups) got a real "Stop-loss hit" notification for a trade that was
+    never actually entered (confirmed: KMEW, entry ₹3038, SL ₹2951.40,
+    sl_hit notified with entry_triggered never having fired at all).
+    `already_entered` (entry_triggered already notified on a prior check)
+    covers the case where price crossed entry earlier and has since
+    fallen back through SL; entered_now covers this same check crossing
+    both at once (a real gap through both levels)."""
     reached = set()
     if entry_price is None or entry_price <= 0:
         return reached
 
-    if current_price >= entry_price:
+    entered_now = current_price >= entry_price
+    if entered_now:
         reached.add("entry_triggered")
+
+    if not (already_entered or entered_now):
+        return reached
 
     profit_pct = (current_price - entry_price) / entry_price * 100
     if profit_pct >= PROFIT_MILESTONE_PCT:
@@ -1986,7 +2004,8 @@ def _entry_tracker_state(entry):
     except Exception:
         current_price = None
 
-    reached = _milestones_reached(entry_price, sl_price, current_price) if (entry_price and current_price) else set()
+    already_entered = "entry_triggered" in (entry.get("milestones_notified") or [])
+    reached = _milestones_reached(entry_price, sl_price, current_price, already_entered=already_entered) if (entry_price and current_price) else set()
     profit_pct = ((current_price - entry_price) / entry_price * 100) if (entry_price and current_price) else None
 
     return {
@@ -2020,7 +2039,7 @@ def _check_and_notify_active_entries():
         current_price = change["value"]
 
         already_notified = set(entry.get("milestones_notified") or [])
-        reached = _milestones_reached(entry_price, sl_price, current_price)
+        reached = _milestones_reached(entry_price, sl_price, current_price, already_entered="entry_triggered" in already_notified)
         new_milestones = [m for m in ALERT_MILESTONES if m in reached and m not in already_notified]
         if not new_milestones:
             continue
