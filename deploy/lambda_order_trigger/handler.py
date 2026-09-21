@@ -21,7 +21,15 @@ fixed Elastic IP, so nothing downstream needs to know its address).
 import boto3
 
 REGION = "ap-south-1"
-LAUNCH_TEMPLATE_NAME = "trading-bot"
+# The dedicated launch template for this project (lt-0bd1e940d7668cdee) -
+# NOT the similarly-named "trading-bot" template, which belongs to a
+# separate, unrelated project (its own Telegram bot + insidebar/
+# opposite-15m scanner strategies, github.com/avijitmajumder2050/
+# trading-bot). Confirmed via its own app/utils/ec2_launcher.py, which
+# already expected a dedicated /trading-bot-algo/ec2/launch_template_id
+# SSM param pointing at this exact template - this project's proper
+# infra was already built, just never wired up before today.
+LAUNCH_TEMPLATE_NAME = "trading-bot-algo"
 NAME_TAG_VALUE = "trading-bot-algo"
 
 ec2 = boto3.client("ec2", region_name=REGION)
