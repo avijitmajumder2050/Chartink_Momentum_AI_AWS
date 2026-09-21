@@ -1842,7 +1842,7 @@ AUTO_BREAKOUT_ENABLED = True
 AUTO_BREAKOUT_TOP_N = 10
 AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02d}"
 AUTO_BREAKOUT_WINDOW_END = "10:30"
-_auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set()}
+_auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set(), "executor_prewarmed": False}
 
 # The dedicated-IP order-executor pipeline (trading-bot-algo polling
 # quantile-order-intents) has been built and end-to-end tested against
@@ -1875,7 +1875,7 @@ def _auto_create_breakout_alerts():
     now = datetime.datetime.now(chart_connector.IST)
     today_str = now.strftime("%Y-%m-%d")
     if _auto_breakout_state["date"] != today_str:
-        _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set())
+        _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set(), executor_prewarmed=False)
 
     if _auto_breakout_state["done"]:
         return
@@ -1883,6 +1883,30 @@ def _auto_create_breakout_alerts():
     if now_hm < AUTO_BREAKOUT_WINDOW_START:
         return
     window_closed = now_hm > AUTO_BREAKOUT_WINDOW_END
+
+    # Pre-warm the dedicated-IP order executor the moment the window
+    # opens, in parallel with qualification/the race — not when a
+    # winner is declared. Its cold boot (yum update, pip install, git
+    # clone) has taken anywhere from ~60s to several minutes in
+    # testing; waiting until a winner is known to even start booting
+    # meant the instance could still be booting while the stock kept
+    # moving, and place_trade() re-quotes at whatever LTP is current
+    # when it finally places — so a slow boot doesn't risk the order
+    # never filling, but does risk filling well away from the intended
+    # entry with the same original SL, skewing the trade's real RR.
+    # A stock can't realistically win before its own 2nd candle even
+    # forms, a few minutes after window open at the earliest, so this
+    # gives the instance a real head start. Fires at most once per day
+    # (idempotent either way - trigger_order_executor's Lambda is a
+    # no-op if an instance is already up) and only if auto-ordering is
+    # actually enabled.
+    if AUTO_ORDER_ON_BREAKOUT_ENABLED and not _auto_breakout_state["executor_prewarmed"]:
+        _auto_breakout_state["executor_prewarmed"] = True
+        try:
+            order_intent_connector.trigger_order_executor()
+            print(f"[auto-breakout] {today_str}: pre-warmed order executor at window open", file=sys.stderr)
+        except Exception as exc:
+            print(f"[auto-breakout] pre-warm failed: {exc}", file=sys.stderr)
 
     if _auto_breakout_state["symbols"] is None:
         try:
