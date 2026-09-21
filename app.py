@@ -27,7 +27,7 @@ import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import mock_data
-from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
+from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, order_intent_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
 
 app = Flask(__name__)
 app.secret_key = secrets.get_parameter("/chartink-momentum-ai/flask_secret_key")
@@ -1844,6 +1844,14 @@ AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02
 AUTO_BREAKOUT_WINDOW_END = "10:30"
 _auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set()}
 
+# Off by default — the dedicated-IP order-executor pipeline
+# (trading-bot-algo polling quantile-order-intents) is still being
+# built out and defaults to PAPER_MODE there too. Flip only once
+# that side has been verified end-to-end; until then the breakout
+# race still runs and still notifies exactly as before, it just
+# doesn't also write an order intent / wake the executor.
+AUTO_ORDER_ON_BREAKOUT_ENABLED = False
+
 
 def _auto_create_breakout_alerts():
     """Runs on every breakout-watch tick (every BREAKOUT_WATCH_INTERVAL_
@@ -2191,6 +2199,25 @@ def _breakout_watch_once():
         )
     except Exception as exc:
         print(f"[breakout-watch] notify failed for {entry['symbol']}: {exc}", file=sys.stderr)
+
+    if AUTO_ORDER_ON_BREAKOUT_ENABLED:
+        try:
+            resolved, _unresolved = dhan_connector.resolve_security_ids([entry["symbol"]])
+            security_id = resolved.get(entry["symbol"])
+            if security_id is None:
+                print(f"[breakout-watch] auto-order skipped for {entry['symbol']}: no security id", file=sys.stderr)
+            else:
+                intent = order_intent_connector.create_intent(
+                    entry_id=entry["id"], symbol=entry["symbol"], security_id=security_id,
+                    side="BUY", entry_price=entry_price, sl_price=sl_price,
+                )
+                if intent is not None:
+                    order_intent_connector.trigger_order_executor()
+                    print(f"[breakout-watch] order intent created + executor triggered for {entry['symbol']}", file=sys.stderr)
+                # intent is None => an intent for this entry already exists (duplicate
+                # _breakout_watch_once() run) — idempotency gate 1, silently a no-op.
+        except Exception as exc:
+            print(f"[breakout-watch] auto-order failed for {entry['symbol']}: {exc}", file=sys.stderr)
 
     already_notified = set(entry.get("milestones_notified") or [])
     try:
