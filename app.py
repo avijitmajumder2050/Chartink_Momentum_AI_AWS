@@ -1844,13 +1844,13 @@ AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02
 AUTO_BREAKOUT_WINDOW_END = "10:30"
 _auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set()}
 
-# Off by default — the dedicated-IP order-executor pipeline
-# (trading-bot-algo polling quantile-order-intents) is still being
-# built out and defaults to PAPER_MODE there too. Flip only once
-# that side has been verified end-to-end; until then the breakout
-# race still runs and still notifies exactly as before, it just
-# doesn't also write an order intent / wake the executor.
-AUTO_ORDER_ON_BREAKOUT_ENABLED = False
+# The dedicated-IP order-executor pipeline (trading-bot-algo polling
+# quantile-order-intents) has been built and end-to-end tested against
+# real infra (see 2026-09-21 verification). Enabled for tomorrow's
+# real breakout to generate a real order intent — trading-bot-algo
+# itself is still in PAPER_MODE (SSM /trading-bot-algo/paper_mode),
+# so this produces a paper trade to review, not a real Dhan order.
+AUTO_ORDER_ON_BREAKOUT_ENABLED = True
 
 
 def _auto_create_breakout_alerts():
