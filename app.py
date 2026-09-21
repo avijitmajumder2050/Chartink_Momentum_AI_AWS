@@ -2123,10 +2123,12 @@ def _start_alert_monitor():
 #      minutes later — this exists to react faster, and to implement
 #      "first one wins": the moment ANY pending breakout-batch stock
 #      actually crosses its entry price, every OTHER still-pending one
-#      from that same batch is deactivated immediately, rather than
-#      potentially also triggering (and getting traded) minutes later.
-#      One-trade-from-the-batch, not "notify everything that eventually
-#      triggers."
+#      from that same batch is deactivated immediately, AND step 1's
+#      qualification process is stopped for the rest of the day too — a
+#      stock still waiting on 2nd-candle data at that exact moment can't
+#      qualify a minute later and become a brand-new solo watch with
+#      nothing left to race against. One-trade-from-the-batch, full
+#      stop, not "notify everything that eventually triggers."
 # Once a stock's entry_triggered fires here, the general bot's own
 # 5-minute cadence takes over for its profit/RR/SL milestones — those
 # don't need the fast loop's responsiveness.
@@ -2194,7 +2196,19 @@ def _breakout_watch_once():
         except Exception as exc:
             print(f"[breakout-watch] couldn't deactivate {loser['symbol']}: {exc}", file=sys.stderr)
 
-    print(f"[breakout-watch] {today_str}: {entry['symbol']} triggered first at {current_price:.2f} - cancelled {[l['symbol'] for l in losers]}", file=sys.stderr)
+    # A winner for the day means "only take the first stock that breaks
+    # out" is now decided — also stop the separate qualification process
+    # (_auto_create_breakout_alerts) so a stock still waiting on 2nd-
+    # candle data at this exact moment can't qualify a minute later and
+    # become a brand-new solo watch with nothing left to race against
+    # (it would otherwise go on to trigger its own independent entry,
+    # defeating the whole point of the race). Safe across a day boundary:
+    # _auto_create_breakout_alerts() resets this state itself the moment
+    # it sees a new date.
+    if _auto_breakout_state["date"] == today_str:
+        _auto_breakout_state["done"] = True
+
+    print(f"[breakout-watch] {today_str}: {entry['symbol']} triggered first at {current_price:.2f} - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
 
 
 def _breakout_watch_loop():
