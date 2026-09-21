@@ -2149,7 +2149,15 @@ def _breakout_watch_once():
     if len(pending) < 2:
         return  # nothing to race against — a lone candidate just waits for the general bot
 
-    winner = None
+    # A tick can find more than one pending stock already past its entry
+    # (prices move between 60s checks, and multiple can cross within the
+    # same window) — collect every one that has crossed on this tick,
+    # then pick the tightest stop-loss (lowest SL% = lowest risk) among
+    # them as the single winner, rather than an arbitrary list-order
+    # tiebreak. A stock that crossed on an earlier tick already won and
+    # was removed from "pending" (entry_triggered set), so this only
+    # ever compares stocks crossing for the first time on this same tick.
+    crossed = []
     for entry in pending:
         entry_price = entry.get("entry_price")
         if entry_price is None:
@@ -2160,13 +2168,17 @@ def _breakout_watch_once():
             change = None
         current_price = change["value"] if change else None
         if current_price is not None and current_price >= float(entry_price):
-            winner = (entry, current_price)
-            break
+            sl_price_raw = entry.get("sl_price")
+            sl_pct = None
+            if sl_price_raw is not None and float(entry_price) > 0:
+                sl_pct = (float(entry_price) - float(sl_price_raw)) / float(entry_price)
+            crossed.append((entry, current_price, sl_pct))
 
-    if winner is None:
+    if not crossed:
         return
 
-    entry, current_price = winner
+    crossed.sort(key=lambda c: c[2] if c[2] is not None else float("inf"))
+    entry, current_price, _winner_sl_pct = crossed[0]
     entry_price = float(entry["entry_price"])
     sl_price = float(entry["sl_price"]) if entry.get("sl_price") is not None else None
 
@@ -2191,7 +2203,7 @@ def _breakout_watch_once():
         try:
             campaign_connector.update_entry(
                 loser["id"], active=False,
-                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} triggered first at {current_price:.2f}]",
+                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} won (lowest SL%, entry triggered at {current_price:.2f})]",
             )
         except Exception as exc:
             print(f"[breakout-watch] couldn't deactivate {loser['symbol']}: {exc}", file=sys.stderr)
@@ -2208,7 +2220,7 @@ def _breakout_watch_once():
     if _auto_breakout_state["date"] == today_str:
         _auto_breakout_state["done"] = True
 
-    print(f"[breakout-watch] {today_str}: {entry['symbol']} triggered first at {current_price:.2f} - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
+    print(f"[breakout-watch] {today_str}: {entry['symbol']} won (lowest SL%, entry triggered at {current_price:.2f}) among {len(crossed)} crossed this tick - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
 
 
 def _breakout_watch_loop():
