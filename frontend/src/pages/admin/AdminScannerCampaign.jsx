@@ -193,10 +193,12 @@ export default function AdminScannerCampaign() {
   // Selecting rows there and clicking the button computes entry = 1st
   // opening-candle high, SL = 2nd candle low — server-side, since that
   // needs the real 2nd candle, which isn't part of the scanner's own
-  // output columns — for each picked stock, skipping any whose 2nd candle
-  // isn't red (the pullback this setup needs) or hasn't formed yet. Every
-  // stock added is then tracked exactly like any other campaign entry, so
-  // picking several notifies each independently as its own entry/SL is hit.
+  // output columns — for each picked stock, skipping any that qualify
+  // under neither condition (a red 2nd candle, or the 1st candle already
+  // closing near its own high with no pullback needed) or hasn't formed
+  // yet. Every stock added is then tracked exactly like any other
+  // campaign entry, so picking several notifies each independently as
+  // its own entry/SL is hit.
   const [breakoutSelected, setBreakoutSelected] = useState(() => new Set());
   const [creatingBreakout, setCreatingBreakout] = useState(false);
 
@@ -620,7 +622,7 @@ export default function AdminScannerCampaign() {
             </div>
             {isBreakoutScanner && res?.rows?.length > 0 && (
               <p style={{ fontSize: 11.5, color: "#8A90A0", margin: "0 0 10px" }}>
-                Check stocks below, then "+ Breakout alert" — entry = 1st candle high, SL = 2nd candle low, only added for stocks whose 2nd candle closed red (a pullback).
+                Check stocks below, then "+ Breakout alert" — entry = 1st candle high, SL = 2nd candle low. Added for a 2nd-candle pullback (closed red), or "instant" if the 1st candle already closed near its own high with no pullback needed.
               </p>
             )}
             {!res || !res.rows?.length ? (

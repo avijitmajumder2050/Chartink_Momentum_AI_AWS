@@ -1463,17 +1463,36 @@ def api_admin_create_entry():
     return jsonify({"ok": True, "entry": _entry_json_safe(entry)})
 
 
+# Alternative "instant" qualification (added 2026-09-21) for a stock
+# whose 2nd candle never pulls back at all — it just keeps running. The
+# original pullback rule alone missed these entirely. A stock qualifies
+# this way when its FIRST candle already closed within this fraction of
+# its own high-low range, measured down from the high — e.g. 0.20 means
+# the close sits in the top 20% of the candle's range, so barely any
+# upper shadow: strong enough that a 2nd-candle pullback isn't needed to
+# call it a real setup. Same entry (1st candle high) and SL (2nd candle
+# low) either way — this only changes which stocks qualify, not the
+# trade levels themselves.
+INSTANT_QUALIFY_NEAR_HIGH_FRACTION = 0.20
+
+
 def _create_breakout_entries_for_symbols(symbols, created_by):
     """Shared by the admin's manual "+ Breakout alert" action (api_admin_
     create_breakout_entries below) and the automatic morning bot
-    (_auto_create_breakout_alerts) — same 2-candle breakout-pullback rule
-    either way: entry = the first opening candle's high, stop-loss = the
-    second candle's low, only for stocks whose second candle actually
-    closed red (a pullback). Each entry created then gets tracked exactly
-    like any other (see the alert-tracking bot below) — covering many
-    stocks at once means each is notified independently the moment its
-    own entry/SL is hit, same as any other campaign entry. Returns a list
-    of {symbol, ok, ...} — never raises for an individual symbol."""
+    (_auto_create_breakout_alerts) — entry = the first opening candle's
+    high, stop-loss = the second candle's low, either way. A stock
+    qualifies via EITHER of two conditions (see INSTANT_QUALIFY_NEAR_
+    HIGH_FRACTION above for the second one):
+      1. Pullback: the second candle closed red.
+      2. Instant: the second candle didn't pull back, but the FIRST
+         candle already closed near its own high (no pullback needed —
+         the stock was already strong enough on the opening candle
+         alone).
+    Each entry created then gets tracked exactly like any other (see the
+    alert-tracking bot below) — covering many stocks at once means each
+    is notified independently the moment its own entry/SL is hit, same
+    as any other campaign entry. Returns a list of {symbol, ok, ...} —
+    never raises for an individual symbol."""
     today = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
     resolved, _unresolved = dhan_connector.resolve_security_ids(symbols)
 
@@ -1497,9 +1516,16 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
         if second_candle is None:
             results.append({"symbol": symbol, "ok": False, "reason": f"Second candle hasn't formed yet - try again after the {first_minute_mod.INTERVAL_MINUTES * 2}-minute mark."})
             continue
-        if second_candle["close"] >= second_candle["open"]:
-            results.append({"symbol": symbol, "ok": False, "reason": "Second candle isn't red - this setup only applies to a pullback."})
+
+        pulled_back = second_candle["close"] < second_candle["open"]
+        candle_range = first_candle["high"] - first_candle["low"]
+        closed_near_high = candle_range > 0 and (first_candle["high"] - first_candle["close"]) <= INSTANT_QUALIFY_NEAR_HIGH_FRACTION * candle_range
+
+        if not (pulled_back or closed_near_high):
+            results.append({"symbol": symbol, "ok": False, "reason": "Second candle isn't red and the first candle didn't close near its high - no qualifying setup."})
             continue
+
+        qualify_reason = "pullback candle" if pulled_back else "1st candle closed near its high, no pullback needed"
 
         entry_price = first_candle["high"]
         sl_price = second_candle["low"]
@@ -1510,8 +1536,8 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
                 sl_price=sl_price,
                 target_price=None,
                 note=(
-                    f"Breakout setup: {first_minute_mod.INTERVAL_MINUTES}-min opening candle high "
-                    f"{entry_price:.2f} (entry), pullback candle low {sl_price:.2f} (SL)"
+                    f"Breakout setup ({qualify_reason}): {first_minute_mod.INTERVAL_MINUTES}-min opening "
+                    f"candle high {entry_price:.2f} (entry), 2nd candle low {sl_price:.2f} (SL)"
                 ),
                 source="first_minute_movers",
                 entry_type="momentum",
@@ -1530,7 +1556,7 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
         try:
             _send_campaign_notification(
                 f"👀 New watch — {symbol}",
-                f"{symbol} qualified for a breakout setup: watch for a break above ₹{entry_price:.2f} (SL ₹{sl_price:.2f}).",
+                f"{symbol} qualified for a breakout setup ({qualify_reason}): watch for a break above ₹{entry_price:.2f} (SL ₹{sl_price:.2f}).",
                 ALERT_MONITOR_AUDIENCE,
                 entry_symbols=[symbol],
                 channels=("in_app", "push") if fcm_connector.is_configured() else ("in_app",),
@@ -1797,20 +1823,23 @@ ALERT_MONITOR_AUDIENCE = ["pro", "premium"]
 ALERT_MONITOR_INTERVAL_SECONDS = 5 * 60
 
 # Automatic version of the admin's manual "+ Breakout alert" action (see
-# _create_breakout_entries_for_symbols) — once each morning, takes the top
+# _create_breakout_entries_for_symbols) — once each morning, takes ALL
 # AUTO_BREAKOUT_TOP_N gainers from the First-Minute Gainers/Losers scanner
-# and applies the same 2-candle breakout-pullback rule, with no admin click
-# needed. Window: the 2nd candle needs INTERVAL_MINUTES*2 after 09:15 to
-# have actually formed (09:25 for the current 5-min interval), and this
-# only makes sense as a same-morning signal — a late-afternoon run using
-# hours-old opening candles would be pointless, not just redundant. Called
-# from _breakout_watch_loop (below), NOT this alert-monitor's own slower
-# loop — the "does it qualify yet" retry and the post-qualify "has it
-# broken out yet" race both run on the same fast 1-minute cadence, so a
-# stock that only just qualifies doesn't sit up to 5 minutes before its
-# first breakout check.
+# (10 -> the scanner's own full gainers list, widened from an original 4
+# on 2026-09-21 so a real gainer that doesn't make a tiny top-4 cut still
+# gets considered) and applies the same qualification rule (pullback OR
+# instant-near-high, see _create_breakout_entries_for_symbols), with no
+# admin click needed. Window: the 2nd candle needs INTERVAL_MINUTES*2
+# after 09:15 to have actually formed (09:25 for the current 5-min
+# interval), and this only makes sense as a same-morning signal — a
+# late-afternoon run using hours-old opening candles would be pointless,
+# not just redundant. Called from _breakout_watch_loop (below), NOT this
+# alert-monitor's own slower loop — the "does it qualify yet" retry and
+# the post-qualify "has it broken out yet" race both run on the same
+# fast 1-minute cadence, so a stock that only just qualifies doesn't sit
+# up to 5 minutes before its first breakout check.
 AUTO_BREAKOUT_ENABLED = True
-AUTO_BREAKOUT_TOP_N = 4
+AUTO_BREAKOUT_TOP_N = 10
 AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02d}"
 AUTO_BREAKOUT_WINDOW_END = "10:30"
 _auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set()}
