@@ -250,3 +250,69 @@ def get_opening_move(security_id, date_str, interval=1):
     failures/None just as eagerly as real results)."""
     key = f"dhan_opening_move_{security_id}_{date_str}_{interval}m"
     return cache.get_or_fetch(key, FIRST_MINUTE_CACHE_TTL_SECONDS, lambda: _fetch_opening_move(security_id, date_str, interval=interval))
+
+
+# How close counts as "at" the circuit — 0.5%, same threshold used on
+# the order-execution side (trading-bot-algo's dhan_super_client.py)
+# for consistency between the two independent checks.
+CIRCUIT_PROXIMITY_FRACTION = 0.005
+
+
+def get_circuit_limits(security_id, segment="NSE_EQ", max_attempts=3, retry_delay=1):
+    """(ltp, lower_circuit_limit, upper_circuit_limit) from a live Dhan
+    quote — deliberately not cached (unlike everything else in this
+    file): a circuit check is only meaningful against the current
+    price, not a stale one. Any of the three can be None if every
+    attempt fails or that field is missing.
+
+    A few retries, not a single bare attempt: Dhan's quote endpoint is
+    flaky enough in practice (confirmed live, 2026-09-22 night) that a
+    single-shot fetch would too often "fail closed" in near_circuit()
+    below and block a real, otherwise-valid setup on a transient blip
+    rather than an actual circuit condition.
+
+    Used to reject a stock at qualify time, before it ever becomes a
+    "New watch" alert — not just at order-placement time. Confirmed
+    live (TBZ, 2026-09-22): a circuit-frozen stock can still produce a
+    qualifying-looking candle shape, so this checks Dhan's own
+    authoritative circuit data directly rather than only inferring it
+    from candle shape."""
+    client = _get_client()
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = client.quote_data(securities={segment: [int(security_id)]})
+            data = resp.get("data", {}) if isinstance(resp, dict) else {}
+            inner = data.get("data", {}) if isinstance(data, dict) else {}
+            seg_data = inner.get(segment, {}) if isinstance(inner, dict) else {}
+            quote = seg_data.get(str(security_id)) if isinstance(seg_data, dict) else None
+            if not quote or not isinstance(quote, dict):
+                raise ValueError(f"Empty or invalid quote: {quote}")
+            ltp = quote.get("last_price")
+            if ltp is None:
+                raise ValueError("last_price missing in quote")
+            lower = quote.get("lower_circuit_limit")
+            upper = quote.get("upper_circuit_limit")
+            return (
+                float(ltp),
+                float(lower) if lower is not None else None,
+                float(upper) if upper is not None else None,
+            )
+        except Exception:
+            if attempt < max_attempts:
+                time.sleep(retry_delay)
+    return None, None, None
+
+
+def near_circuit(security_id):
+    """True if security_id's live price is within CIRCUIT_PROXIMITY_
+    FRACTION of either circuit limit (or the quote genuinely couldn't
+    be fetched — fail closed, since a qualify-time reject is cheap and
+    a false negative here is a real risk, not just noise)."""
+    ltp, lower, upper = get_circuit_limits(security_id)
+    if ltp is None or lower is None or upper is None:
+        return True
+    if upper > 0 and ltp >= upper * (1 - CIRCUIT_PROXIMITY_FRACTION):
+        return True
+    if lower > 0 and ltp <= lower * (1 + CIRCUIT_PROXIMITY_FRACTION):
+        return True
+    return False

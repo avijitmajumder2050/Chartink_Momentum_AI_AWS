@@ -1503,6 +1503,17 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
             results.append({"symbol": symbol, "ok": False, "reason": "Symbol not found."})
             continue
 
+        # Checked before candle shape, using Dhan's own live circuit
+        # data rather than inferring it from a frozen candle — a stock
+        # can be near (not just exactly at) its circuit while still
+        # producing candles that would otherwise pass the pullback/
+        # instant-qualify checks below. Rejecting here means it never
+        # even becomes a "New watch" alert, not just a blocked order
+        # later (confirmed live: TBZ, 2026-09-22).
+        if dhan_connector.near_circuit(security_id):
+            results.append({"symbol": symbol, "ok": False, "reason": "Price is at/near its circuit limit — frozen or about to freeze, not a tradeable setup."})
+            continue
+
         try:
             move = dhan_connector.get_opening_move(security_id, today, interval=first_minute_mod.INTERVAL_MINUTES)
         except Exception as exc:
