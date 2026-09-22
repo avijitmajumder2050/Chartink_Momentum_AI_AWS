@@ -1529,6 +1529,20 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
 
         entry_price = first_candle["high"]
         sl_price = second_candle["low"]
+
+        # A stock that hits its own circuit (5%/10%/20% band) right at
+        # open freezes there for the rest of the session — every candle
+        # after the freeze prints open=high=low=close at the locked
+        # price. Confirmed live (TBZ, 2026-09-22): that produces a 2nd
+        # candle low equal to the 1st candle's high, so entry_price ==
+        # sl_price exactly — a zero-risk-distance "setup" that isn't a
+        # real breakout at all, just a data artifact. Left unguarded,
+        # its SL% is unbeatably 0%, so the race's lowest-SL%-wins rule
+        # picks it over every legitimate qualifier every time (it did:
+        # RPTECH/UNIMECH/ROSSTECH all lost to it that morning).
+        if sl_price >= entry_price:
+            results.append({"symbol": symbol, "ok": False, "reason": f"SL ({sl_price}) isn't below entry ({entry_price}) — likely a circuit-frozen candle, not a real breakout setup."})
+            continue
         try:
             entry = campaign_connector.create_entry(
                 symbol=symbol,
