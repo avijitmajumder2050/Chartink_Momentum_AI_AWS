@@ -98,6 +98,13 @@ aws s3 sync dist/ s3://quantile-frontend-staging/ --delete --region ap-south-1
 aws cloudfront create-invalidation --distribution-id E3SG9FAP3WCJBZ --paths "/*"
 ```
 
+**Gotcha confirmed live (2026-09-23):** `--delete` removes anything in
+the bucket that isn't in the local `dist/` folder — which includes
+`ondemand.html`, since that's a separate manually-uploaded file, not
+part of the Vite build. A routine frontend redeploy silently deleted
+it. After any `sync --delete`, re-check `/ondemand.html` still loads
+and re-upload it (see "Redeploying ondemand.html" above) if not.
+
 ## SSH access without a local key file
 
 The `myapp_aws2` key pair this instance was launched with isn't

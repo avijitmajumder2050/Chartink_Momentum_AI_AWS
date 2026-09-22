@@ -5,6 +5,7 @@
 // who intercepts the redirect's `code` trade it for tokens themselves.
 
 const VERIFIER_STORAGE_KEY = "quantile_pkce_verifier";
+const POST_LOGIN_REDIRECT_KEY = "quantile_post_login_redirect";
 
 function randomString(length) {
   const bytes = new Uint8Array(length);
@@ -30,6 +31,19 @@ async function codeChallengeFor(verifier) {
 // directly from a "Log in" button's onClick, there's no return value
 // because the whole point is navigating away.
 export async function redirectToLogin(config) {
+  // Stash where the user actually was (e.g. a deep link like
+  // /markets/chart?symbol=SKYGOLD, opened directly or hit via a 401
+  // mid-session) so Callback.jsx can send them back there instead of
+  // always landing on "/" after a successful login — confirmed live:
+  // a direct visit to a protected deep link while signed out silently
+  // dropped the user on the home page once login finished. Skip saving
+  // the callback route itself, so a stale/looping value can't strand
+  // someone back on /auth/callback.
+  const current = window.location.pathname + window.location.search;
+  if (!current.startsWith("/auth/callback")) {
+    sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, current);
+  }
+
   const verifier = randomString(64);
   sessionStorage.setItem(VERIFIER_STORAGE_KEY, verifier);
   const challenge = await codeChallengeFor(verifier);
@@ -47,11 +61,23 @@ export async function redirectToLogin(config) {
 
 export function redirectToLogout(config) {
   sessionStorage.removeItem(VERIFIER_STORAGE_KEY);
+  sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
   const params = new URLSearchParams({
     client_id: config.clientId,
     logout_uri: config.logoutUri,
   });
   window.location.href = `https://${config.domain}/logout?${params.toString()}`;
+}
+
+// Reads back (and clears) wherever redirectToLogin() stashed before
+// leaving for Cognito — Callback.jsx calls this once, after a
+// successful token exchange, instead of always navigating to "/".
+// Defaults to "/" when nothing was saved (e.g. login started from a
+// plain "Log in" button with no specific deep link in play).
+export function consumePostLoginRedirect() {
+  const dest = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+  sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+  return dest || "/";
 }
 
 // Exchanges the `code` Cognito's redirect handed back for real tokens —

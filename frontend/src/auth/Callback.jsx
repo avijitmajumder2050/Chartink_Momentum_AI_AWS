@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cognitoConfig } from "../config";
-import { exchangeCodeForTokens } from "./pkce";
+import { exchangeCodeForTokens, consumePostLoginRedirect } from "./pkce";
 import { setTokens } from "./tokenStore";
 import { useAuth } from "./AuthContext";
 
 // Route target for Cognito Hosted UI's redirect_uri (?code=...). Exchanges
 // the code for tokens, stores them, refreshes the auth context's current
-// user, then leaves this URL for the app's home page — a real page, not
-// a query string with a one-time code in it.
+// user, then leaves this URL for wherever the user actually wanted to be
+// (consumePostLoginRedirect() — a real page, not a query string with a
+// one-time code in it) instead of always landing on home.
 export default function Callback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -56,7 +57,7 @@ export default function Callback() {
           throw new Error("Signed in, but couldn't load your account. Please try again.");
         }
       })
-      .then(() => navigate("/", { replace: true }))
+      .then(() => navigate(consumePostLoginRedirect(), { replace: true }))
       .catch((err) => setError(err.message));
   }, [searchParams, navigate, refreshCurrentUser]);
 
