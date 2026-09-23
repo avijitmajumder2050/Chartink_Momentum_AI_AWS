@@ -257,6 +257,16 @@ def get_opening_move(security_id, date_str, interval=1):
 # for consistency between the two independent checks.
 CIRCUIT_PROXIMITY_FRACTION = 0.005
 
+# 5%-circuit-band stocks are excluded outright, regardless of how far
+# current price sits from the limit — a 5% band means far less room to
+# move before freezing at all, and (per the user) they're categorically
+# not wanted in this scanner. NSE's standard bands are 2/5/10/20%, well
+# separated from each other, so a ±0.75 point tolerance around 5.0%
+# safely catches a true 5% stock (limits are rounded to tick size, so
+# the computed band is rarely exactly 5.00%) without risk of confusing
+# it for a 10% or 20% stock.
+FIVE_PCT_CIRCUIT_TOLERANCE = 0.75
+
 
 def get_circuit_limits(security_id, segment="NSE_EQ", max_attempts=3, retry_delay=1):
     """(ltp, lower_circuit_limit, upper_circuit_limit) from a live Dhan
@@ -303,16 +313,33 @@ def get_circuit_limits(security_id, segment="NSE_EQ", max_attempts=3, retry_dela
     return None, None, None
 
 
-def near_circuit(security_id):
-    """True if security_id's live price is within CIRCUIT_PROXIMITY_
-    FRACTION of either circuit limit (or the quote genuinely couldn't
-    be fetched — fail closed, since a qualify-time reject is cheap and
-    a false negative here is a real risk, not just noise)."""
+def circuit_reject_reason(security_id):
+    """None if security_id is fine to scan; otherwise a short reason
+    string. One quote fetch, two independent checks:
+
+      1. 5%-circuit-band stock — excluded outright regardless of how
+         far current price sits from the limit (the user's explicit
+         request: these are never scanned at all, not just avoided
+         when close to freezing).
+      2. Live price within CIRCUIT_PROXIMITY_FRACTION of either limit
+         — catches a stock on a wider band (10%/20%) that's still
+         effectively frozen/illiquid right now.
+
+    Fails closed (rejects) if the quote genuinely couldn't be fetched
+    — a qualify-time reject is cheap and a false negative here is a
+    real risk, not just noise."""
     ltp, lower, upper = get_circuit_limits(security_id)
     if ltp is None or lower is None or upper is None:
-        return True
+        return "Couldn't fetch live circuit data — skipping to be safe."
+
+    if upper > 0 and lower > 0:
+        band_pct = (upper - lower) / (upper + lower) * 100
+        if abs(band_pct - 5.0) <= FIVE_PCT_CIRCUIT_TOLERANCE:
+            return f"5% circuit-band stock (computed {band_pct:.2f}%) — excluded from scanning entirely."
+
     if upper > 0 and ltp >= upper * (1 - CIRCUIT_PROXIMITY_FRACTION):
-        return True
+        return "Price is at/near its upper circuit limit — frozen or about to freeze, not a tradeable setup."
     if lower > 0 and ltp <= lower * (1 + CIRCUIT_PROXIMITY_FRACTION):
-        return True
-    return False
+        return "Price is at/near its lower circuit limit — frozen or about to freeze, not a tradeable setup."
+
+    return None

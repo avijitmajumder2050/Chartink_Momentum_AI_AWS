@@ -1509,9 +1509,12 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
         # producing candles that would otherwise pass the pullback/
         # instant-qualify checks below. Rejecting here means it never
         # even becomes a "New watch" alert, not just a blocked order
-        # later (confirmed live: TBZ, 2026-09-22).
-        if dhan_connector.near_circuit(security_id):
-            results.append({"symbol": symbol, "ok": False, "reason": "Price is at/near its circuit limit — frozen or about to freeze, not a tradeable setup."})
+        # later (confirmed live: TBZ, 2026-09-22). Also excludes any
+        # 5%-circuit-band stock outright, regardless of current price
+        # proximity — 5% bands never get scanned at all, per request.
+        circuit_reason = dhan_connector.circuit_reject_reason(security_id)
+        if circuit_reason:
+            results.append({"symbol": symbol, "ok": False, "reason": circuit_reason})
             continue
 
         try:
