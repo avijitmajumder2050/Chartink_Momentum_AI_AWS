@@ -18,6 +18,7 @@ const STATE_STYLE = {
   cancelled: { label: "Cancelled", color: "#E0473F", background: "#FCEBEA" },
   expired: { label: "Expired", color: "#E0473F", background: "#FCEBEA" },
   failed: { label: "Failed", color: "#E0473F", background: "#FCEBEA" },
+  no_result: { label: "No result", color: "#B98A2E", background: "#FBF2E1" },
 };
 const DEFAULT_STATE_STYLE = { label: "Unknown", color: "#5B6270", background: "#F0F1F4" };
 
@@ -183,7 +184,10 @@ export default function AdminQuantileOrders() {
                       </td>
                       <td style={mono}>{o.trailing_jump ?? "—"}</td>
                       <td style={mono}>{money(o.target_price)}</td>
-                      <td style={mono}>{isClosed ? money(o.exit_price) : money(o.ltp)}</td>
+                      <td style={mono}>
+                        {isClosed ? money(o.exit_price) : money(o.ltp)}
+                        {isClosed && o.exit_time && <span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>{o.exit_time.slice(11, 16)}</span>}
+                      </td>
                       <td style={{ ...mono, fontWeight: 700, color: pnlColor(o.pnl) }}>{signedMoney(o.pnl)}</td>
                       <td style={{ ...cell, fontWeight: 700, ...(REASON_STYLE[o.close_reason] || { color: "#5B6270" }) }}>{isClosed ? o.close_reason || "—" : "—"}</td>
                       <td style={{ ...cell, fontSize: 12, color: "#8A90A0" }}>{o.order_id || "—"}</td>

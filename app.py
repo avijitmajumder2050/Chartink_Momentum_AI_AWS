@@ -1359,9 +1359,12 @@ def api_admin_subscriptions():
 
 
 # Admin "Quantile Orders" page: every quantile-order-intents row merged
-# with its live Dhan super order (entry leg + STOP_LOSS_LEG/TARGET_LEG).
+# with its live Dhan super order (entry leg + STOP_LOSS_LEG/TARGET_LEG)
+# and its actual fills from Dhan's trade book / trade history.
 _DHAN_ENTRY_OPEN_STATUSES = {"TRANSIT", "PENDING", "PART_TRADED"}
+_DHAN_DEAD_STATES = {"rejected", "cancelled", "expired"}
 _OUTCOME_REASONS = {"STOP_LOSS_HIT": "SL", "TARGET_HIT": "Target", "EXIT_CANCELLED": "Cancelled"}
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 
 def _num(value):
@@ -1372,11 +1375,85 @@ def _num(value):
     return f if f else None
 
 
+def _trade_time(trade):
+    # Trade book says "2026-09-24 09:27:10", trade history "2026-09-24T09:27:10".
+    return str(trade.get("exchangeTime") or "").replace("T", " ")
+
+
+def _weighted_avg(parts):
+    qty = sum(q for q, _ in parts)
+    return round(sum(q * p for q, p in parts) / qty, 2) if qty else None
+
+
+def _order_fills(trades, order_id, security_id, qty):
+    """Real average entry/exit prices from executed trades. The entry
+    fills carry the super order's own orderId, but the SL/target exit
+    fills don't (confirmed live, SHYAMMETL 2026-09-24: entry under
+    34326092413573, exit under 311260924226507) — so exits are matched
+    as opposite-side fills of the same security after the entry, taken
+    in time order up to the entry quantity. None if nothing matched."""
+    entries = [t for t in trades if str(t.get("orderId")) == order_id]
+    if not entries:
+        return None
+    side = (entries[0].get("transactionType") or "").upper()
+    entry_parts = [(_num(t.get("tradedQuantity")) or 0, _num(t.get("tradedPrice")) or 0) for t in entries]
+    entry_qty = qty or sum(q for q, _ in entry_parts)
+    start = min(_trade_time(t) for t in entries)
+    exits = sorted(
+        (t for t in trades
+         if str(t.get("securityId")) == str(security_id)
+         and (t.get("transactionType") or "").upper() not in ("", side)
+         and _trade_time(t) >= start),
+        key=_trade_time,
+    )
+    exit_parts, got, exit_time = [], 0, None
+    for t in exits:
+        if got >= entry_qty:
+            break
+        q = min(_num(t.get("tradedQuantity")) or 0, entry_qty - got)
+        exit_parts.append((q, _num(t.get("tradedPrice")) or 0))
+        got += q
+        exit_time = _trade_time(t)
+    fully_exited = got >= entry_qty
+    return {
+        "entry_price": _weighted_avg(entry_parts),
+        "exit_price": _weighted_avg(exit_parts) if fully_exited else None,
+        "exit_time": exit_time if fully_exited else None,
+    }
+
+
+def _apply_fills(snap, fills, original_sl):
+    if fills and fills["entry_price"]:
+        snap["entry_price"] = fills["entry_price"]
+    if fills and snap["state"] == "closed" and fills["exit_price"]:
+        snap.update(exit_price=fills["exit_price"], exit_time=fills["exit_time"], exit_from_fills=True)
+    # An SL exit at least one trailing jump beyond the original stop means
+    # the stop had been trailed — judged on the real fill, not the leg
+    # price. A full jump, not any gap: an untrailed stop routinely fills a
+    # few paise past its trigger (AEROFLEX 2026-09-23: SL 529.65, filled
+    # 530.15 — a loss, not a trail).
+    if snap.get("close_reason") == "SL" and original_sl is not None and snap.get("exit_price") is not None:
+        margin = snap.get("trailing_jump") or 0.01
+        buy = snap.get("side", "BUY") == "BUY"
+        if (snap["exit_price"] >= original_sl + margin) if buy else (snap["exit_price"] <= original_sl - margin):
+            snap["close_reason"] = "Trailing SL"
+    return snap
+
+
+def _intent_trade_date(intent):
+    # created_at is naive UTC (datetime.utcnow()); Dhan's trade dates are IST.
+    try:
+        created = datetime.datetime.fromisoformat(intent["created_at"]).replace(tzinfo=datetime.timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return created.astimezone(_IST).strftime("%Y-%m-%d")
+
+
 def _super_order_snapshot(order, original_sl):
     """Normalises one Dhan super order into the fields the admin page
-    shows. Close reason comes from whichever exit leg actually traded; a
-    STOP_LOSS_LEG exit above the original SL (below, for a SELL) means
-    the stop had been trailed, so it's reported as "Trailing SL"."""
+    shows. Close reason comes from whichever exit leg actually traded.
+    exit_price here is only the leg's trigger level — _apply_fills()
+    replaces it with the real fill price when the trades are available."""
     side = (order.get("transactionType") or "BUY").upper()
     legs = {(l.get("legName") or "").upper(): l for l in order.get("legDetails") or [] if isinstance(l, dict)}
     sl_leg = legs.get("STOP_LOSS_LEG", {})
@@ -1396,22 +1473,21 @@ def _super_order_snapshot(order, original_sl):
         "exit_price": None,
         "close_reason": None,
         "state": "active",
-        "error": order.get("omsErrorDescription") or None,
+        "error": None,
         "updated_at": order.get("updateTime") or order.get("createTime"),
     }
 
     if entry_status in _DHAN_ENTRY_OPEN_STATUSES:
         snap["state"] = "entry_pending"
-    elif entry_status in ("REJECTED", "CANCELLED", "EXPIRED") and not snap["qty"]:
+    elif entry_status in ("REJECTED", "CANCELLED", "EXPIRED") and not _num(order.get("filledQty")):
         snap["state"] = entry_status.lower()
+        # omsErrorDescription is also set on success ("TRADE CONFIRMED"),
+        # so only surface it when the order actually died.
+        snap["error"] = order.get("omsErrorDescription") or None
     elif (target_leg.get("orderStatus") or "").upper() == "TRADED":
         snap.update(state="closed", close_reason="Target", exit_price=snap["target_price"])
     elif (sl_leg.get("orderStatus") or "").upper() == "TRADED":
-        exit_price = snap["current_sl"]
-        trailed = original_sl is not None and exit_price is not None and (
-            exit_price > original_sl + 0.01 if side == "BUY" else exit_price < original_sl - 0.01
-        )
-        snap.update(state="closed", close_reason="Trailing SL" if trailed else "SL", exit_price=exit_price)
+        snap.update(state="closed", close_reason="SL", exit_price=snap["current_sl"])
     elif entry_status in ("CLOSED", "CANCELLED", "EXPIRED"):
         # Exited without either leg reporting TRADED (e.g. manual square-off
         # or auto square-off at 3:15) — closed, reason unknown from Dhan.
@@ -1419,25 +1495,39 @@ def _super_order_snapshot(order, original_sl):
     return snap
 
 
-def _quantile_order_row(intent, dhan_orders):
+def _quantile_order_row(intent, dhan_orders, trades_for_date):
     original_sl = _num(intent.get("sl_price"))
     order_id = str(intent.get("order_id") or "")
     status = intent.get("status")
+    stored = _json_safe(intent.get("dhan_snapshot") or {})
     snap = None
 
     if order_id and order_id in dhan_orders:
         snap = _super_order_snapshot(dhan_orders[order_id], original_sl)
-        stored = _json_safe(intent.get("dhan_snapshot") or {})
-        if stored != snap:
-            try:
-                order_intent_connector.save_dhan_snapshot(
-                    intent["entry_id"], {k: (decimal.Decimal(str(v)) if isinstance(v, float) else v) for k, v in snap.items()}
-                )
-            except Exception:
-                app.logger.exception("couldn't save dhan snapshot for %s", intent["entry_id"])
-    elif intent.get("dhan_snapshot"):
+    elif stored:
         # Not in today's Dhan order book any more — last seen state.
-        snap = _json_safe(intent["dhan_snapshot"])
+        snap = dict(stored)
+    elif status == "closed" and order_id:
+        # Closed on a past day before any snapshot was saved — rebuild
+        # what we can from the intent, and the fills from trade history.
+        snap = {"order_id": order_id, "state": "closed", "side": (intent.get("side") or "BUY").upper(), "qty": _num(intent.get("filled_qty")),
+                "trailing_jump": _num(intent.get("trailing_jump")), "close_reason": _OUTCOME_REASONS.get(intent.get("outcome"))}
+
+    # Real fill prices: always for an open trade (entry avg), and for a
+    # closed one until its exit has been resolved from fills once — after
+    # that the saved snapshot already has it, no more trade lookups.
+    if snap and (snap.get("state") == "active" or (snap.get("state") == "closed" and not snap.get("exit_from_fills"))):
+        trade_date = _intent_trade_date(intent)
+        trades = trades_for_date(trade_date) if trade_date else []
+        snap = _apply_fills(snap, _order_fills(trades, order_id, intent.get("security_id"), snap.get("qty")), original_sl)
+
+    if snap and snap != stored:
+        try:
+            order_intent_connector.save_dhan_snapshot(
+                intent["entry_id"], {k: (decimal.Decimal(str(v)) if isinstance(v, float) else v) for k, v in snap.items()}
+            )
+        except Exception:
+            app.logger.exception("couldn't save dhan snapshot for %s", intent["entry_id"])
 
     row = {
         "entry_id": intent["entry_id"],
@@ -1446,7 +1536,6 @@ def _quantile_order_row(intent, dhan_orders):
         "intent_status": status,
         "order_id": order_id or None,
         "side": intent.get("side") or "BUY",
-        "signal_entry": _num(intent.get("entry_price")),
         "original_sl": original_sl,
         "qty": _num(intent.get("filled_qty")),
         "entry_price": _num(intent.get("entry_price")),
@@ -1455,6 +1544,7 @@ def _quantile_order_row(intent, dhan_orders):
         "target_price": _num(intent.get("target_price")),
         "ltp": None,
         "exit_price": None,
+        "exit_time": None,
         "close_reason": _OUTCOME_REASONS.get(intent.get("outcome")),
         "state": {"pending": "queued", "claimed": "placing", "failed": "failed", "paper_filled": "paper"}.get(status, "closed" if status == "closed" else "unknown"),
         "dhan_status": None,
@@ -1462,8 +1552,12 @@ def _quantile_order_row(intent, dhan_orders):
     }
     if snap:
         row.update({k: v for k, v in snap.items() if v is not None})
-        if not row["close_reason"] and intent.get("outcome"):
-            row["close_reason"] = _OUTCOME_REASONS.get(intent["outcome"])
+        if row["state"] not in _DHAN_DEAD_STATES:
+            row["error"] = None  # older snapshots saved "TRADE CONFIRMED" here
+    if row["state"] in ("queued", "placing") and _intent_trade_date(intent) != datetime.datetime.now(_IST).strftime("%Y-%m-%d"):
+        # Still pending/claimed from a past day — trading-bot-algo never
+        # wrote a result back, so don't show it as in progress.
+        row["state"] = "no_result"
     return row
 
 
@@ -1490,15 +1584,31 @@ def api_admin_quantile_orders():
             app.logger.exception("Dhan super order book fetch failed")
             dhan_error = str(exc)
 
-    rows = [_quantile_order_row(i, dhan_orders) for i in intents]
-    for row in rows:
-        # Dhan's order book ltp can be missing/stale — fall back to a live
-        # quote for trades still open.
-        if row["state"] == "active" and row["ltp"] is None:
-            security_id = next((i.get("security_id") for i in intents if i["entry_id"] == row["entry_id"]), None)
-            if security_id:
-                row["ltp"] = dhan_connector.get_circuit_limits(security_id, max_attempts=1)[0]
+    today = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
+    trades_by_date = {}
+
+    def trades_for_date(date_str):
+        # Fetched lazily, at most once per date per request.
+        if date_str not in trades_by_date:
+            try:
+                if date_str == today:
+                    trades_by_date[date_str] = dhan_connector.get_trade_book()
+                else:
+                    trades_by_date[date_str] = dhan_connector.get_trade_history(date_str)
+            except Exception:
+                app.logger.exception("Dhan trades fetch failed for %s", date_str)
+                trades_by_date[date_str] = []
+        return trades_by_date[date_str]
+
+    rows = []
+    for intent in intents:
+        row = _quantile_order_row(intent, dhan_orders, trades_for_date)
+        # The order book's ltp is frozen at order time — use a live quote
+        # for trades still open.
+        if row["state"] == "active" and intent.get("security_id"):
+            row["ltp"] = dhan_connector.get_circuit_limits(intent["security_id"], max_attempts=1)[0] or row["ltp"]
         row["pnl"] = _quantile_order_pnl(row)
+        rows.append(row)
     return jsonify({"orders": rows, "dhan_error": dhan_error})
 
 

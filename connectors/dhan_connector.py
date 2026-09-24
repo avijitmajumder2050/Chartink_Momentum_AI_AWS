@@ -358,3 +358,36 @@ def get_super_orders():
     if isinstance(data, dict):
         data = [data]
     return {str(o.get("orderId")): o for o in data if isinstance(o, dict) and o.get("orderId")}
+
+
+def get_trade_book():
+    """Today's executed trades (every partial fill is its own row).
+    Needed for real exit prices: a super order's SL/target exit fills
+    under a different orderId than the super order itself, and the exit
+    leg's reported "price" is its trigger level, not the actual fill."""
+    resp = _get_client().get_trade_book()
+    if not isinstance(resp, dict) or resp.get("status") != "success":
+        raise RuntimeError(f"Dhan get_trade_book failed: {resp.get('remarks') if isinstance(resp, dict) else resp}")
+    return resp.get("data") or []
+
+
+TRADE_HISTORY_CACHE_TTL_SECONDS = 60 * 60
+
+
+def get_trade_history(date_str):
+    """Executed trades for one past day (YYYY-MM-DD) — the trade book
+    only covers today. Dhan publishes a day's history with some lag, so
+    an empty answer is cached for an hour, not permanently."""
+    def fetch():
+        client = _get_client()
+        next_day = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        trades, page = [], 0
+        while page < 20:
+            resp = client.get_trade_history(date_str, next_day, page)
+            data = resp.get("data") if isinstance(resp, dict) else None
+            if not data:
+                break
+            trades.extend(data)
+            page += 1
+        return [t for t in trades if str(t.get("exchangeTime") or "").startswith(date_str)]
+    return cache.get_or_fetch(f"dhan_trade_history_{date_str}", TRADE_HISTORY_CACHE_TTL_SECONDS, fetch)
