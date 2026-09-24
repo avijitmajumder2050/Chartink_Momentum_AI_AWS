@@ -73,12 +73,20 @@ export default function Research() {
   const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
+    // Ignore a response for a symbol the user has already searched past,
+    // so a slow earlier search can't overwrite a newer one.
+    let cancelled = false;
     setData(null);
     apiFetch(`/api/research?symbol=${encodeURIComponent(urlSymbol)}`)
       .then((res) => res.json())
-      .then(setData)
-      .catch(() => setData({ unavailable: true }));
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setData({ unavailable: true }));
+    return () => {
+      cancelled = true;
+    };
   }, [urlSymbol]);
+
+  const loading = data === null;
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -106,15 +114,24 @@ export default function Research() {
 
   return (
     <>
+      <style>{"@keyframes researchSpin{to{transform:rotate(360deg)}} .research-search-spinner{animation:researchSpin .8s linear infinite}"}</style>
       <div style={{ width: "100%", padding: "40px clamp(16px, 5vw, 48px) 0" }}>
         <form
           onSubmit={onSearchSubmit}
-          style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: "1.5px solid #E3E6EC", borderRadius: 12, padding: "14px 20px" }}
+          aria-busy={loading}
+          style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", gap: 14, background: "#FFFFFF", border: `1.5px solid ${loading ? "#4640DE" : "#E3E6EC"}`, borderRadius: 12, padding: "14px 20px", transition: "border-color .2s" }}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#8A90A0" strokeWidth="1.6">
-            <circle cx="8" cy="8" r="6" />
-            <path d="M12.5 12.5L16 16" />
-          </svg>
+          {loading ? (
+            <svg className="research-search-spinner" width="18" height="18" viewBox="0 0 18 18" fill="none" role="status" aria-label={`Loading ${urlSymbol}`} style={{ flexShrink: 0 }}>
+              <circle cx="9" cy="9" r="7" stroke="#E3E6EC" strokeWidth="2.2" />
+              <path d="M9 2a7 7 0 0 1 7 7" stroke="#4640DE" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#8A90A0" strokeWidth="1.6" style={{ flexShrink: 0 }}>
+              <circle cx="8" cy="8" r="6" />
+              <path d="M12.5 12.5L16 16" />
+            </svg>
+          )}
           <input
             id="stockSearchInput"
             className="search-input"
@@ -124,7 +141,11 @@ export default function Research() {
             placeholder='Search 2,100+ NSE / BSE stocks — try "HDFC Bank" or "TATASTEEL"'
             autoComplete="off"
           />
-          <span style={{ fontSize: 12.5, color: "#C6C9D2", background: "#F0F1F4", padding: "4px 8px", borderRadius: 6, fontWeight: 600 }}>⌘K</span>
+          {loading ? (
+            <span style={{ fontSize: 12.5, color: "#4640DE", fontWeight: 600, whiteSpace: "nowrap" }}>Loading {urlSymbol}…</span>
+          ) : (
+            <span style={{ fontSize: 12.5, color: "#C6C9D2", background: "#F0F1F4", padding: "4px 8px", borderRadius: 6, fontWeight: 600 }}>⌘K</span>
+          )}
         </form>
       </div>
 
