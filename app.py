@@ -1584,20 +1584,30 @@ def api_admin_quantile_orders():
             app.logger.exception("Dhan super order book fetch failed")
             dhan_error = str(exc)
 
-    today = datetime.datetime.now(_IST).strftime("%Y-%m-%d")
     trades_by_date = {}
+    trade_book = []
 
     def trades_for_date(date_str):
-        # Fetched lazily, at most once per date per request.
+        # Fetched lazily, at most once per date per request. The trade
+        # book is checked first for every date, not only today: it keeps
+        # the last session's trades until Dhan resets it next morning,
+        # while trade history lags by a day or more (confirmed live
+        # 2026-09-25: history for the 24th was still empty, the book had
+        # all its fills). Not merged — history reports exchangeTradeId
+        # "0", so the same fill can't be deduplicated across the two.
         if date_str not in trades_by_date:
-            try:
-                if date_str == today:
-                    trades_by_date[date_str] = dhan_connector.get_trade_book()
-                else:
-                    trades_by_date[date_str] = dhan_connector.get_trade_history(date_str)
-            except Exception:
-                app.logger.exception("Dhan trades fetch failed for %s", date_str)
-                trades_by_date[date_str] = []
+            if not trade_book:
+                try:
+                    trade_book.extend(dhan_connector.get_trade_book())
+                except Exception:
+                    app.logger.exception("Dhan trade book fetch failed")
+            trades = [t for t in trade_book if _trade_time(t).startswith(date_str)]
+            if not trades:
+                try:
+                    trades = dhan_connector.get_trade_history(date_str)
+                except Exception:
+                    app.logger.exception("Dhan trade history fetch failed for %s", date_str)
+            trades_by_date[date_str] = trades
         return trades_by_date[date_str]
 
     rows = []
