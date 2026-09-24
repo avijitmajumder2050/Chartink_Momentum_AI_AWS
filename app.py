@@ -470,6 +470,81 @@ def _news_movers():
     }
 
 
+HOME_INDICES = [
+    ("NIFTY 50", "NIFTY 50"),
+    ("SENSEX", "SENSEX"),
+    ("BANK NIFTY", "BANK NIFTY"),
+    ("NIFTY IT", "NIFTY IT"),
+    ("NIFTYMIDSMALLCAP400", "MIDCAP 400"),
+    ("INDIA VIX", "INDIA VIX"),
+]
+HOME_MOVERS_LIMIT = 4
+WATCHLIST_METRICS_TTL_SECONDS = 15 * 60
+
+_home_warm_lock = threading.Lock()
+
+
+def _fetch_home_indices():
+    results = []
+    for symbol, label in HOME_INDICES:
+        try:
+            bars = chart_connector.get_ohlcv(symbol)
+        except Exception:
+            continue
+        if len(bars) < 2 or not bars[-2]["close"]:
+            continue
+        last, prev = bars[-1]["close"], bars[-2]["close"]
+        results.append({"label": label, "value": last, "change": last - prev, "changePct": (last - prev) / prev * 100})
+    return results
+
+
+def _warm_watchlist_metrics_in_background():
+    """Kick off a watchlist scan without waiting for it — at most one at a
+    time (non-blocking lock), and only when the cached result is missing
+    or expired, so the public homepage costs at most one scan per cache
+    window no matter how many people visit."""
+    if not _home_warm_lock.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            _dashboard_watchlist_metrics()
+        except Exception:
+            app.logger.exception("background watchlist metrics warm failed")
+        finally:
+            _home_warm_lock.release()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.get("/api/home")
+def api_home():
+    """Live market data for the public homepage: index strip, today's top
+    movers and market breadth. Indices are fetched directly (a handful of
+    cached quotes); movers/breadth reuse the dashboard's watchlist scan
+    via peek() and refresh it in the background rather than making a
+    visitor wait ~16s for it."""
+    try:
+        indices = cache.get_or_fetch("home_market_indices", 5 * 60, _fetch_home_indices)
+    except Exception:
+        app.logger.exception("home indices failed")
+        indices = []
+
+    entry = cache.peek("dashboard_watchlist_metrics")
+    if not entry or time.time() - entry.get("cached_at", 0) > WATCHLIST_METRICS_TTL_SECONDS:
+        _warm_watchlist_metrics_in_background()
+    metrics = (entry or {}).get("data") or []
+    as_row = lambda m: {"symbol": m["symbol"], "price": m.get("price"), "changePct": m["changePct"]}
+
+    return jsonify({
+        "indices": indices,
+        "gainers": [as_row(m) for m in _top_gainers(metrics, HOME_MOVERS_LIMIT) if m["changePct"] > 0],
+        "losers": [as_row(m) for m in _top_losers(metrics, HOME_MOVERS_LIMIT) if m["changePct"] < 0],
+        "breadth": _breadth_from_metrics(metrics),
+        "moversUpdatedAt": datetime.datetime.fromtimestamp(entry["cached_at"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if metrics else None,
+    })
+
+
 @app.get("/api/news")
 def api_news():
     try:
