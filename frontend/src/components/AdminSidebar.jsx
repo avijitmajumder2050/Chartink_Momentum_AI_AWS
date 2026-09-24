@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { label: "Subscriptions", to: "/admin/subscriptions" },
   { label: "Voucher Campaigns", to: "/admin/campaigns" },
   { label: "Scanner Campaign", to: "/admin/scanner-campaign" },
+  { label: "Quantile Orders", to: "/admin/quantile-orders" },
   { label: "IPO Data", to: "/markets/ipo-hub" },
   { label: "Courses", to: "/education" },
 ];

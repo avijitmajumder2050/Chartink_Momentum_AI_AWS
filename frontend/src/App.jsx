@@ -20,6 +20,7 @@ import AdminSubscriptions from "./pages/admin/AdminSubscriptions";
 import AdminCampaigns from "./pages/admin/AdminCampaigns";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminScannerCampaign from "./pages/admin/AdminScannerCampaign";
+import AdminQuantileOrders from "./pages/admin/AdminQuantileOrders";
 import Education from "./pages/Education";
 import Pricing from "./pages/Pricing";
 import Vision from "./pages/Vision";
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="subscriptions" element={<AdminSubscriptions />} />
           <Route path="campaigns" element={<AdminCampaigns />} />
           <Route path="scanner-campaign" element={<AdminScannerCampaign />} />
+          <Route path="quantile-orders" element={<AdminQuantileOrders />} />
         </Route>
 
         <Route path="/education" element={<Education />} />

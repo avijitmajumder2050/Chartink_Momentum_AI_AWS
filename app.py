@@ -1358,6 +1358,150 @@ def api_admin_subscriptions():
     return jsonify(_json_safe({"subscriptions": subscription_connector.list_all_subscriptions()}))
 
 
+# Admin "Quantile Orders" page: every quantile-order-intents row merged
+# with its live Dhan super order (entry leg + STOP_LOSS_LEG/TARGET_LEG).
+_DHAN_ENTRY_OPEN_STATUSES = {"TRANSIT", "PENDING", "PART_TRADED"}
+_OUTCOME_REASONS = {"STOP_LOSS_HIT": "SL", "TARGET_HIT": "Target", "EXIT_CANCELLED": "Cancelled"}
+
+
+def _num(value):
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f else None
+
+
+def _super_order_snapshot(order, original_sl):
+    """Normalises one Dhan super order into the fields the admin page
+    shows. Close reason comes from whichever exit leg actually traded; a
+    STOP_LOSS_LEG exit above the original SL (below, for a SELL) means
+    the stop had been trailed, so it's reported as "Trailing SL"."""
+    side = (order.get("transactionType") or "BUY").upper()
+    legs = {(l.get("legName") or "").upper(): l for l in order.get("legDetails") or [] if isinstance(l, dict)}
+    sl_leg = legs.get("STOP_LOSS_LEG", {})
+    target_leg = legs.get("TARGET_LEG", {})
+    entry_status = (order.get("orderStatus") or "").upper()
+
+    snap = {
+        "order_id": str(order.get("orderId")),
+        "dhan_status": entry_status,
+        "side": side,
+        "qty": _num(order.get("filledQty")) or _num(order.get("quantity")),
+        "entry_price": _num(order.get("averageTradedPrice")) or _num(order.get("price")),
+        "current_sl": _num(sl_leg.get("price")),
+        "trailing_jump": _num(sl_leg.get("trailingJump")),
+        "target_price": _num(target_leg.get("price")),
+        "ltp": _num(order.get("ltp")),
+        "exit_price": None,
+        "close_reason": None,
+        "state": "active",
+        "error": order.get("omsErrorDescription") or None,
+        "updated_at": order.get("updateTime") or order.get("createTime"),
+    }
+
+    if entry_status in _DHAN_ENTRY_OPEN_STATUSES:
+        snap["state"] = "entry_pending"
+    elif entry_status in ("REJECTED", "CANCELLED", "EXPIRED") and not snap["qty"]:
+        snap["state"] = entry_status.lower()
+    elif (target_leg.get("orderStatus") or "").upper() == "TRADED":
+        snap.update(state="closed", close_reason="Target", exit_price=snap["target_price"])
+    elif (sl_leg.get("orderStatus") or "").upper() == "TRADED":
+        exit_price = snap["current_sl"]
+        trailed = original_sl is not None and exit_price is not None and (
+            exit_price > original_sl + 0.01 if side == "BUY" else exit_price < original_sl - 0.01
+        )
+        snap.update(state="closed", close_reason="Trailing SL" if trailed else "SL", exit_price=exit_price)
+    elif entry_status in ("CLOSED", "CANCELLED", "EXPIRED"):
+        # Exited without either leg reporting TRADED (e.g. manual square-off
+        # or auto square-off at 3:15) — closed, reason unknown from Dhan.
+        snap.update(state="closed", close_reason="Exited")
+    return snap
+
+
+def _quantile_order_row(intent, dhan_orders):
+    original_sl = _num(intent.get("sl_price"))
+    order_id = str(intent.get("order_id") or "")
+    status = intent.get("status")
+    snap = None
+
+    if order_id and order_id in dhan_orders:
+        snap = _super_order_snapshot(dhan_orders[order_id], original_sl)
+        stored = _json_safe(intent.get("dhan_snapshot") or {})
+        if stored != snap:
+            try:
+                order_intent_connector.save_dhan_snapshot(
+                    intent["entry_id"], {k: (decimal.Decimal(str(v)) if isinstance(v, float) else v) for k, v in snap.items()}
+                )
+            except Exception:
+                app.logger.exception("couldn't save dhan snapshot for %s", intent["entry_id"])
+    elif intent.get("dhan_snapshot"):
+        # Not in today's Dhan order book any more — last seen state.
+        snap = _json_safe(intent["dhan_snapshot"])
+
+    row = {
+        "entry_id": intent["entry_id"],
+        "symbol": intent.get("symbol"),
+        "created_at": intent.get("created_at"),
+        "intent_status": status,
+        "order_id": order_id or None,
+        "side": intent.get("side") or "BUY",
+        "signal_entry": _num(intent.get("entry_price")),
+        "original_sl": original_sl,
+        "qty": _num(intent.get("filled_qty")),
+        "entry_price": _num(intent.get("entry_price")),
+        "current_sl": original_sl,
+        "trailing_jump": _num(intent.get("trailing_jump")),
+        "target_price": _num(intent.get("target_price")),
+        "ltp": None,
+        "exit_price": None,
+        "close_reason": _OUTCOME_REASONS.get(intent.get("outcome")),
+        "state": {"pending": "queued", "claimed": "placing", "failed": "failed", "paper_filled": "paper"}.get(status, "closed" if status == "closed" else "unknown"),
+        "dhan_status": None,
+        "error": None,
+    }
+    if snap:
+        row.update({k: v for k, v in snap.items() if v is not None})
+        if not row["close_reason"] and intent.get("outcome"):
+            row["close_reason"] = _OUTCOME_REASONS.get(intent["outcome"])
+    return row
+
+
+def _quantile_order_pnl(row):
+    exit_or_ltp = row["exit_price"] if row["state"] == "closed" else row["ltp"]
+    if row["entry_price"] is None or exit_or_ltp is None or not row["qty"]:
+        return None
+    per_share = exit_or_ltp - row["entry_price"]
+    if row["side"] == "SELL":
+        per_share = -per_share
+    return round(per_share * row["qty"], 2)
+
+
+@app.get("/api/admin/quantile-orders")
+@role_required("admin")
+def api_admin_quantile_orders():
+    intents = order_intent_connector.list_all_intents()
+    dhan_error = None
+    dhan_orders = {}
+    if any(i.get("order_id") and i.get("status") != "paper_filled" for i in intents):
+        try:
+            dhan_orders = dhan_connector.get_super_orders()
+        except Exception as exc:
+            app.logger.exception("Dhan super order book fetch failed")
+            dhan_error = str(exc)
+
+    rows = [_quantile_order_row(i, dhan_orders) for i in intents]
+    for row in rows:
+        # Dhan's order book ltp can be missing/stale — fall back to a live
+        # quote for trades still open.
+        if row["state"] == "active" and row["ltp"] is None:
+            security_id = next((i.get("security_id") for i in intents if i["entry_id"] == row["entry_id"]), None)
+            if security_id:
+                row["ltp"] = dhan_connector.get_circuit_limits(security_id, max_attempts=1)[0]
+        row["pnl"] = _quantile_order_pnl(row)
+    return jsonify({"orders": rows, "dhan_error": dhan_error})
+
+
 @app.get("/api/admin/campaigns")
 @role_required("admin")
 def api_admin_campaigns_bootstrap():

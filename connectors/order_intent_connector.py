@@ -156,3 +156,34 @@ def list_open_intents():
         FilterExpression=Attr("status").is_in(["claimed", "paper_filled", "live_filled"]),
     ).get("Items", [])
     return items
+
+
+def list_all_intents():
+    """Every intent, newest first — for the admin Quantile Orders page.
+    A plain paginated scan: this table only grows by one row per
+    breakout-race winner, so it stays small."""
+    table = _get_intents_table()
+    kwargs = {}
+    items = []
+    while True:
+        page = table.scan(**kwargs)
+        items.extend(page.get("Items", []))
+        if "LastEvaluatedKey" not in page:
+            break
+        kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    items.sort(key=lambda i: i.get("created_at") or "", reverse=True)
+    return items
+
+
+def save_dhan_snapshot(entry_id, snapshot):
+    """Persist the last-seen Dhan super order state onto the intent row.
+    Dhan's super order book only covers the current trading day, so
+    without this a closed trade's exit price/reason would vanish from
+    the admin page the next morning. A targeted SET (not update_intent's
+    get+put) so it can never clobber a status write trading-bot-algo
+    makes at the same moment."""
+    _get_intents_table().update_item(
+        Key={"entry_id": entry_id},
+        UpdateExpression="SET dhan_snapshot = :s",
+        ExpressionAttributeValues={":s": snapshot},
+    )

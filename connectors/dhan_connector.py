@@ -343,3 +343,18 @@ def circuit_reject_reason(security_id):
         return "Price is at/near its lower circuit limit — frozen or about to freeze, not a tradeable setup."
 
     return None
+
+
+def get_super_orders():
+    """Today's super order book, keyed by orderId. Read-only, so it works
+    from this backend's own IP — only order placement/modification needs
+    trading-bot-algo's dedicated static IP. Raises on an API failure so
+    the caller can tell "Dhan unreachable" apart from "no orders"."""
+    resp = _get_client().get_super_order_list()
+    if not isinstance(resp, dict) or resp.get("status") != "success":
+        remarks = resp.get("remarks") if isinstance(resp, dict) else resp
+        raise RuntimeError(f"Dhan get_super_order_list failed: {remarks}")
+    data = resp.get("data") or []
+    if isinstance(data, dict):
+        data = [data]
+    return {str(o.get("orderId")): o for o in data if isinstance(o, dict) and o.get("orderId")}
