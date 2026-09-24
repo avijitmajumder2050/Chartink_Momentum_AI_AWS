@@ -14,6 +14,7 @@ TAG_PALETTE = {
     "CORPORATE": {"tagColor": "#E0473F", "tagBg": "#FCEBEA"},
     "GLOBAL": {"tagColor": "#5B6270", "tagBg": "#F0F1F4"},
     "MARKETS": {"tagColor": "#F2A93B", "tagBg": "#FBF2E1"},
+    "ORDER WIN": {"tagColor": "#17A673", "tagBg": "#E6F7F1"},
 }
 
 THUMB_COLORS = ["#4640DE", "#17A673", "#B98A2E", "#14171F", "#E0473F"]

@@ -28,6 +28,7 @@ import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import mock_data
 from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, order_intent_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
+from connectors.format_utils import pct_str
 
 app = Flask(__name__)
 app.secret_key = secrets.get_parameter("/chartink-momentum-ai/flask_secret_key")
@@ -449,16 +450,38 @@ POPULAR_INDICES = ["NIFTY 50", "BANK NIFTY", "SENSEX", "NIFTY IT", "NIFTY AUTO",
 # (which were written to mirror them exactly before this removal).
 
 
+NEWS_MOVERS_LIMIT = 5
+
+
+def _news_movers():
+    """Live gainers/losers for the News page's Market movers card, from
+    the dashboard's own cached watchlist metrics. peek(), not
+    _dashboard_watchlist_metrics(): /api/news is public, and a cold-cache
+    watchlist scan is ~350 S3/Dhan calls — this page should never be the
+    thing that triggers one. Empty (card hidden) until the dashboard has
+    populated it."""
+    entry = cache.peek("dashboard_watchlist_metrics")
+    metrics = (entry or {}).get("data") or []
+    as_row = lambda m: {"symbol": m["symbol"], "change": pct_str(m["changePct"]), "price": m.get("price")}
+    return {
+        "gainers": [as_row(m) for m in _top_gainers(metrics, NEWS_MOVERS_LIMIT) if m["changePct"] > 0],
+        "losers": [as_row(m) for m in _top_losers(metrics, NEWS_MOVERS_LIMIT) if m["changePct"] < 0],
+        "moversUpdatedAt": datetime.datetime.fromtimestamp(entry["cached_at"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if metrics else None,
+    }
+
+
 @app.get("/api/news")
 def api_news():
     try:
         data = news_connector.get_news_data()
-        # gainers/losers need a live quotes feed, not a news connector concern
-        data["gainers"] = mock_data.news_data()["gainers"]
-        data["losers"] = mock_data.news_data()["losers"]
     except Exception:
         app.logger.exception("news connector failed")
-        data = {"stories": [], "trending": [], "gainers": [], "losers": [], "unavailable": True}
+        data = {"stories": [], "orderWins": [], "trending": [], "unavailable": True}
+    try:
+        data.update(_news_movers())
+    except Exception:
+        app.logger.exception("news movers failed")
+        data.update(gainers=[], losers=[], moversUpdatedAt=None)
     return jsonify(data)
 
 
