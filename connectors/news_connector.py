@@ -12,8 +12,10 @@ takes the others with it:
   3. Exchange filings — BSE's "Award of Order / Receipt of Order"
      announcements and NSE's "Bagging/Receiving of orders/contracts" —
      the official, fastest source for order wins, straight from the
-     company. NSE's API often blocks cloud IPs, so it's a best-effort
-     extra on top of BSE, never relied on alone.
+     company. Both are fetched because each blocks some IPs: confirmed
+     2026-09-25, BSE's API 403s the staging EC2 instance while NSE's
+     works there (and both work from a home connection). The two are
+     deduped per company per day.
 
 Moneycontrol's feeds were dropped: every one of them returns 403 to
 non-browser clients (confirmed 2026-09-25), so it contributed nothing.
