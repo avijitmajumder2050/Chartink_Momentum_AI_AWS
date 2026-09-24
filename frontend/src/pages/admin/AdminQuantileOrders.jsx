@@ -30,6 +30,23 @@ const REASON_STYLE = {
 
 const OPEN_STATES = new Set(["active", "entry_pending", "queued", "placing"]);
 
+const PAGE_SIZES = [10, 25, 50, 100];
+const PAGE_SIZE_KEY = "quantileOrders.pageSize";
+
+function loadPageSize() {
+  try {
+    const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+    return PAGE_SIZES.includes(saved) ? saved : 10;
+  } catch {
+    return 10;
+  }
+}
+
+const pagerButton = (disabled) => ({
+  border: "1px solid #E3E6EC", background: "#FFFFFF", color: disabled ? "#C5C9D3" : "#14171F", cursor: disabled ? "default" : "pointer",
+  fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8,
+});
+
 const money = (v) => (v === null || v === undefined ? "—" : `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 const pnlColor = (v) => (v > 0 ? "#17A673" : v < 0 ? "#E0473F" : "#5B6270");
 const signedMoney = (v) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${money(Math.abs(v))}`);
@@ -59,6 +76,18 @@ export default function AdminQuantileOrders() {
   const [error, setError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [filter, setFilter] = useState("all");
+  const [pageSize, setPageSize] = useState(loadPageSize);
+  const [page, setPage] = useState(1);
+
+  const changePageSize = (size) => {
+    setPageSize(size);
+    setPage(1);
+    try {
+      localStorage.setItem(PAGE_SIZE_KEY, String(size));
+    } catch {
+      // storage blocked — the choice just won't be remembered
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +137,13 @@ export default function AdminQuantileOrders() {
   const unrealised = orders.filter((o) => o.state === "active").reduce((sum, o) => sum + (o.pnl || 0), 0);
   const wins = closed.filter((o) => o.pnl > 0).length;
 
-  const visible = orders.filter((o) => (filter === "all" ? true : filter === "open" ? OPEN_STATES.has(o.state) : !OPEN_STATES.has(o.state)));
+  const filtered = orders.filter((o) => (filter === "all" ? true : filter === "open" ? OPEN_STATES.has(o.state) : !OPEN_STATES.has(o.state)));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  // Clamped rather than reset in an effect — an auto-refresh that shrinks
+  // the list just lands on the new last page.
+  const currentPage = Math.min(page, pageCount);
+  const firstIndex = (currentPage - 1) * pageSize;
+  const visible = filtered.slice(firstIndex, firstIndex + pageSize);
 
   return (
     <div style={{ padding: "30px clamp(16px, 4vw, 36px) 60px" }}>
@@ -123,7 +158,10 @@ export default function AdminQuantileOrders() {
             <button
               key={key}
               type="button"
-              onClick={() => setFilter(key)}
+              onClick={() => {
+                setFilter(key);
+                setPage(1);
+              }}
               style={{
                 border: "1px solid #E3E6EC", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, padding: "8px 14px", borderRadius: 9,
                 background: filter === key ? "#14171F" : "#FFFFFF", color: filter === key ? "#FFFFFF" : "#5B6270",
@@ -198,6 +236,36 @@ export default function AdminQuantileOrders() {
             </tbody>
           </table>
         </div>
+        {filtered.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 14px", borderTop: "1px solid #E3E6EC" }}>
+            <label style={{ fontSize: 12.5, color: "#5B6270", display: "flex", alignItems: "center", gap: 8 }}>
+              Rows per page
+              <select
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, padding: "5px 8px", borderRadius: 8, border: "1px solid #E3E6EC", background: "#FFFFFF", color: "#14171F" }}
+              >
+                {PAGE_SIZES.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12.5, color: "#5B6270" }}>
+                {firstIndex + 1}–{firstIndex + visible.length} of {filtered.length}
+              </span>
+              <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} style={pagerButton(currentPage === 1)} aria-label="Previous page">
+                ‹ Prev
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>
+                {currentPage} / {pageCount}
+              </span>
+              <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} style={pagerButton(currentPage === pageCount)} aria-label="Next page">
+                Next ›
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
