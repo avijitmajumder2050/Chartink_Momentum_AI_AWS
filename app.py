@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import json
+import math
 import os
 import random
 import re
@@ -1837,6 +1838,20 @@ def api_admin_create_entry():
 # trade levels themselves.
 INSTANT_QUALIFY_NEAR_HIGH_FRACTION = 0.20
 
+# Stop-loss sits a little below the 2nd candle's low rather than exactly
+# on it, so a wick that just tags the low doesn't stop the trade out.
+SL_BUFFER_PCT = 0.30
+# NSE tick size: 0.05 for most stocks, 0.01 for some low-priced ones — a
+# multiple of 0.05 is valid under both, and Dhan rejects off-tick prices.
+PRICE_TICK = 0.05
+
+
+def _buffered_sl(candle_low):
+    """candle_low minus SL_BUFFER_PCT, rounded DOWN to PRICE_TICK (down,
+    so rounding only ever widens the buffer, never shrinks it)."""
+    raw = candle_low * (1 - SL_BUFFER_PCT / 100)
+    return round(math.floor(round(raw / PRICE_TICK, 6)) * PRICE_TICK, 2)
+
 
 def _create_breakout_entries_for_symbols(symbols, created_by):
     """Shared by the admin's manual "+ Breakout alert" action (api_admin_
@@ -1904,7 +1919,7 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
         qualify_reason = "pullback candle" if pulled_back else "1st candle closed near its high, no pullback needed"
 
         entry_price = first_candle["high"]
-        sl_price = second_candle["low"]
+        second_low = second_candle["low"]
 
         # A stock that hits its own circuit (5%/10%/20% band) right at
         # open freezes there for the rest of the session — every candle
@@ -1915,10 +1930,13 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
         # real breakout at all, just a data artifact. Left unguarded,
         # its SL% is unbeatably 0%, so the race's lowest-SL%-wins rule
         # picks it over every legitimate qualifier every time (it did:
-        # RPTECH/UNIMECH/ROSSTECH all lost to it that morning).
-        if sl_price >= entry_price:
-            results.append({"symbol": symbol, "ok": False, "reason": f"SL ({sl_price}) isn't below entry ({entry_price}) — likely a circuit-frozen candle, not a real breakout setup."})
+        # RPTECH/UNIMECH/ROSSTECH all lost to it that morning). Checked
+        # on the raw low, BEFORE the SL buffer — buffering first would
+        # push a frozen candle's SL just under its entry and let it pass.
+        if second_low >= entry_price:
+            results.append({"symbol": symbol, "ok": False, "reason": f"2nd candle low ({second_low}) isn't below entry ({entry_price}) — likely a circuit-frozen candle, not a real breakout setup."})
             continue
+        sl_price = _buffered_sl(second_low)
         try:
             entry = campaign_connector.create_entry(
                 symbol=symbol,
@@ -1927,7 +1945,8 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
                 target_price=None,
                 note=(
                     f"Breakout setup ({qualify_reason}): {first_minute_mod.INTERVAL_MINUTES}-min opening "
-                    f"candle high {entry_price:.2f} (entry), 2nd candle low {sl_price:.2f} (SL)"
+                    f"candle high {entry_price:.2f} (entry), SL {sl_price:.2f} "
+                    f"(2nd candle low {second_low:.2f} - {SL_BUFFER_PCT:.2f}%)"
                 ),
                 source="first_minute_movers",
                 entry_type="momentum",
