@@ -530,20 +530,25 @@ def api_home():
     except Exception:
         app.logger.exception("home indices failed")
         indices = []
+    return jsonify({"indices": indices, **_watchlist_movers_snapshot(HOME_MOVERS_LIMIT)})
 
+
+def _watchlist_movers_snapshot(limit):
+    """Top gainers/losers + market breadth from the dashboard's cached
+    watchlist scan — peek() only, refreshing it in the background when
+    missing/expired, so no request ever waits ~16s on a full scan. Shared
+    by the homepage and the Sector Overview day view."""
     entry = cache.peek("dashboard_watchlist_metrics")
     if not entry or time.time() - entry.get("cached_at", 0) > WATCHLIST_METRICS_TTL_SECONDS:
         _warm_watchlist_metrics_in_background()
     metrics = (entry or {}).get("data") or []
     as_row = lambda m: {"symbol": m["symbol"], "price": m.get("price"), "changePct": m["changePct"]}
-
-    return jsonify({
-        "indices": indices,
-        "gainers": [as_row(m) for m in _top_gainers(metrics, HOME_MOVERS_LIMIT) if m["changePct"] > 0],
-        "losers": [as_row(m) for m in _top_losers(metrics, HOME_MOVERS_LIMIT) if m["changePct"] < 0],
+    return {
+        "gainers": [as_row(m) for m in _top_gainers(metrics, limit) if m["changePct"] > 0],
+        "losers": [as_row(m) for m in _top_losers(metrics, limit) if m["changePct"] < 0],
         "breadth": _breadth_from_metrics(metrics),
         "moversUpdatedAt": datetime.datetime.fromtimestamp(entry["cached_at"], datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if metrics else None,
-    })
+    }
 
 
 @app.get("/api/news")
@@ -591,12 +596,21 @@ def api_markets_sectors():
     """Sector Overview page: every index in S3's uploads/sector_indices.csv
     with its 200 EMA, RSI(14) and the investment-eligible screen (see
     connectors/sector_connector.py). Histories are cached for 6h and the
-    live quote for 60s, so only a cold start is slow (~10-25s)."""
+    live quote for 60s, so only a cold start is slow (~10-25s). Also
+    carries breadth/top movers for the page's Day view tab."""
     try:
-        return jsonify(sector_connector.get_sector_overview())
+        data = sector_connector.get_sector_overview()
     except Exception:
         app.logger.exception("sector overview failed")
-        return jsonify({"indices": [], "failed": [], "unavailable": True})
+        data = {"indices": [], "failed": [], "unavailable": True}
+    try:
+        data.update(_watchlist_movers_snapshot(SECTOR_DAY_VIEW_MOVERS_LIMIT))
+    except Exception:
+        app.logger.exception("sector day-view movers failed")
+    return jsonify(data)
+
+
+SECTOR_DAY_VIEW_MOVERS_LIMIT = 5
 
 
 @app.get("/api/research")

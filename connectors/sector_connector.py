@@ -45,6 +45,8 @@ RSI_MAX = 35.0
 # indices, e.g. Nifty 500 Momentum 50).
 FULL_HISTORY_BARS = 400
 
+RECENT_BARS = 30
+
 HISTORY_DAYS = 3 * 365
 HISTORY_CACHE_TTL_SECONDS = 6 * 60 * 60
 LIST_CACHE_TTL_SECONDS = 60 * 60
@@ -194,10 +196,18 @@ def _index_row(meta):
         bars = _merge_live(bars, chart_connector._get_live_index_bar(meta["securityId"]))
     except Exception:
         pass  # quote unavailable — the last daily close is fine
-    closes = [b["close"] for b in bars if b["close"] > 0]
+    bars = [b for b in bars if b["close"] > 0]
+    closes = [b["close"] for b in bars]
     if len(closes) < 2:
         raise RuntimeError("not enough history")
-    return {**meta, **evaluate(closes, meta["investable"]), "asOf": bars[-1]["time"]}
+    return {
+        **meta,
+        **evaluate(closes, meta["investable"]),
+        "change": closes[-1] - closes[-2],
+        # Day view's sparklines (30 sessions) and 5-day sector trend.
+        "recent": [{"t": b["time"], "c": b["close"]} for b in bars[-RECENT_BARS:]],
+        "asOf": bars[-1]["time"],
+    }
 
 
 def get_sector_overview():

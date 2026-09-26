@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/client";
+import SectorDayView from "./SectorDayView";
+
+const VIEWS = [
+  { key: "day", label: "Day view" },
+  { key: "screen", label: "Investment screen" },
+];
 
 // GET /api/markets/sectors (app.py -> connectors/sector_connector.py):
 // every index in S3's uploads/sector_indices.csv with its 200-day EMA,
@@ -74,6 +80,10 @@ function Stat({ label, value, sub, color }) {
 export default function SectorOverview() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // ?view= keeps the chosen tab on reload and in shared links.
+  const view = searchParams.get("view") === "screen" ? "screen" : "day";
+  const setView = (key) => setSearchParams(key === "day" ? {} : { view: key }, { replace: true });
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
@@ -139,10 +149,29 @@ export default function SectorOverview() {
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Markets</span>
           <h1 style={{ fontSize: 32, fontWeight: 800, marginTop: 8 }}>Sector overview</h1>
           <p style={{ fontSize: 14.5, color: "#5B6270", marginTop: 6, maxWidth: 720, lineHeight: 1.6 }}>
-            NSE sector, broad-market, thematic and strategy indices, screened daily for investment eligibility.
+            NSE sector, broad-market, thematic and strategy indices — today's market picture, and a daily investment-eligibility screen.
           </p>
         </div>
 
+        <div role="tablist" aria-label="Sector overview views" style={{ display: "flex", gap: 4, borderBottom: "1px solid #E3E6EC" }}>
+          {VIEWS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              style={{
+                background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, padding: "10px 16px", marginBottom: -1,
+                color: view === key ? "#14171F" : "#8A90A0", borderBottom: `2px solid ${view === key ? "#4640DE" : "transparent"}`,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {view === "screen" && (
         <div style={{ background: "#14171F", borderRadius: 16, padding: "18px 22px", display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "#F2A93B", letterSpacing: "0.06em", textTransform: "uppercase" }}>Investment-eligible rule</span>
@@ -157,6 +186,7 @@ export default function SectorOverview() {
             </span>
           )}
         </div>
+        )}
 
         {error && !data ? (
           <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 40, textAlign: "center", fontSize: 14, color: "#5B6270" }}>
@@ -170,6 +200,8 @@ export default function SectorOverview() {
           <div style={{ background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 40, textAlign: "center", fontSize: 14, color: "#5B6270" }}>
             Sector data is temporarily unavailable. Please try again shortly.
           </div>
+        ) : view === "day" ? (
+          <SectorDayView data={data} />
         ) : (
           <>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
