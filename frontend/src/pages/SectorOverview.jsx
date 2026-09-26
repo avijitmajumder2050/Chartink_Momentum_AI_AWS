@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import SectorDayView from "./SectorDayView";
+import { useAuth } from "../auth/AuthContext";
 
 const VIEWS = [
   { key: "day", label: "Day view" },
@@ -80,6 +81,7 @@ function Stat({ label, value, sub, color }) {
 export default function SectorOverview() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   // ?view= keeps the chosen tab on reload and in shared links.
   const view = searchParams.get("view") === "screen" ? "screen" : "day";
@@ -201,7 +203,7 @@ export default function SectorOverview() {
             Sector data is temporarily unavailable. Please try again shortly.
           </div>
         ) : view === "day" ? (
-          <SectorDayView data={data} />
+          <SectorDayView data={data} canShare={user?.role === "admin"} />
         ) : (
           <>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>

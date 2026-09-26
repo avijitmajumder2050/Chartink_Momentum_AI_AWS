@@ -607,6 +607,7 @@ def api_markets_sectors():
         data.update(_watchlist_movers_snapshot(SECTOR_DAY_VIEW_MOVERS_LIMIT))
     except Exception:
         app.logger.exception("sector day-view movers failed")
+    data["marketOpen"] = _market_status().startswith("Markets open")
     return jsonify(data)
 
 
@@ -2290,6 +2291,55 @@ def api_admin_send_campaign():
         title, body, audience, entry_symbols=entry_symbols, channels=channels, sent_by=user["email"],
     )
     return jsonify({"ok": True, "recipientCount": recipient_count, "pushSent": sent_push})
+
+
+# Market view (Sector Overview → Day view → "Share market view"): the
+# admin sends the generated text summary through the same in-app + push
+# path as campaigns. The snapshot image never touches the server — it's
+# copied/downloaded in the admin's browser and pasted wherever they share.
+MARKET_VIEW_DUPLICATE_WINDOW_SECONDS = 10 * 60
+_last_market_view_send = {"digest": None, "at": 0.0}
+
+
+@app.post("/api/admin/market-view/send")
+@role_required("admin")
+def api_admin_send_market_view():
+    user = _current_user()
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    body = (data.get("body") or "").strip()
+    audience = [a for a in (data.get("audience") or []) if a in ("free", "pro", "premium")]
+    if not title or not body:
+        return jsonify({"error": "Title and message are required."}), 400
+
+    push_ready = fcm_connector.is_configured()
+
+    if data.get("test"):
+        # Push to the admin's own devices only — no in-app record, since
+        # the in-app feed is shared by everyone in the audience.
+        if not push_ready:
+            return jsonify({"error": "Push isn't set up, so a private test can't be sent."}), 503
+        tokens = campaign_connector.list_push_tokens_for_emails([user["email"]])
+        if not tokens:
+            return jsonify({"error": "No push-enabled device found for your account — enable notifications on this browser first."}), 400
+        push_body, cta_url, cta_label = _split_cta_for_push(body)
+        sent, stale = fcm_connector.send_to_tokens(tokens, f"[TEST] {title}", push_body, data={"url": cta_url, "cta_label": cta_label} if cta_url else None)
+        for stale_token in stale:
+            campaign_connector.remove_push_token(stale_token)
+        return jsonify({"ok": True, "test": True, "pushSent": sent})
+
+    if not audience:
+        return jsonify({"error": "Choose at least one audience (Free/Pro/Premium)."}), 400
+    # Guard against a double-click or re-send of the identical message.
+    digest = hashlib.sha256(f"{title}\n{body}\n{sorted(audience)}".encode("utf-8")).hexdigest()
+    if (not data.get("force") and _last_market_view_send["digest"] == digest
+            and time.time() - _last_market_view_send["at"] < MARKET_VIEW_DUPLICATE_WINDOW_SECONDS):
+        return jsonify({"error": "This exact market view was already sent in the last 10 minutes.", "duplicate": True}), 409
+
+    channels = ("in_app", "push") if push_ready else ("in_app",)
+    recipient_count, sent_push = _send_campaign_notification(title, body, audience, channels=channels, sent_by=user["email"])
+    _last_market_view_send.update(digest=digest, at=time.time())
+    return jsonify({"ok": True, "recipientCount": recipient_count, "pushSent": sent_push, "channels": list(channels)})
 
 
 # ============================================================

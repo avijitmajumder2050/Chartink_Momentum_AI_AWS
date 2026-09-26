@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
+import MarketViewShare from "./MarketViewShare";
 
 // Sector Overview's "Day view" tab — a dark market-overview dashboard
 // (layout per sector_overview.png): index cards with 30-session
@@ -482,7 +483,8 @@ const INSIGHT_TONE = {
   info: { bg: "rgba(57,135,229,0.18)", color: "#6DA7EC", glyph: "→" },
 };
 
-export default function SectorDayView({ data }) {
+export default function SectorDayView({ data, canShare = false }) {
+  const [sharing, setSharing] = useState(false);
   const [mode, setMode] = useState("pct");
   const rows = useMemo(() => data?.indices || [], [data]);
   const bySymbol = useMemo(() => Object.fromEntries(rows.map((r) => [r.symbol, r])), [rows]);
@@ -553,12 +555,27 @@ export default function SectorDayView({ data }) {
           <h2 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0 }}>Sector view</h2>
           <p style={{ fontSize: 13.5, color: T.text2, margin: "4px 0 0" }}>All sectors with today's performance, trend and key movers</p>
         </div>
-        {asOf && (
-          <div style={{ textAlign: "right", fontSize: 12.5, color: T.text2 }}>
-            <div>{new Date(`${asOf}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
-            {data?.updatedAt && <div style={{ color: T.muted }}>Updated {new Date(data.updatedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</div>}
-          </div>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginLeft: "auto" }}>
+          {canShare && (
+            <button
+              type="button"
+              onClick={() => setSharing(true)}
+              style={{ border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "9px 14px", borderRadius: 9, background: "#4640DE", color: "#FFFFFF", display: "inline-flex", alignItems: "center", gap: 7 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 10V2.5M5 5.5l3-3 3 3M3 9v3.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" />
+              </svg>
+              Share market view
+            </button>
+          )}
+          {asOf && (
+            <div style={{ textAlign: "right", fontSize: 12.5, color: T.text2 }}>
+              <div>{new Date(`${asOf}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</div>
+              {data?.updatedAt && <div style={{ color: T.muted }}>Updated {new Date(data.updatedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</div>}
+            </div>
+          )}
+        </div>
+        {sharing && <MarketViewShare data={data} tiles={tiles} onClose={() => setSharing(false)} />}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
