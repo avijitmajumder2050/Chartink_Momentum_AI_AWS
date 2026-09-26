@@ -1594,12 +1594,43 @@ def _super_order_snapshot(order, original_sl):
     return snap
 
 
+def _match_auto_order(intent, dhan_orders):
+    """orderId of the super order trading-bot-algo placed for this intent,
+    found by security + time. Needed because the bot only writes order_id
+    back to the intent AFTER the trade closes (its execute_trade() blocks
+    monitoring until exit), so for the whole life of an open trade the
+    intent has none. Only orders the bot tagged "<SYMBOL>_AUTO" count, so
+    a manual trade in the same stock is never picked up; among several
+    (e.g. RMS-rejected retries) a live one beats a rejected one, then the
+    newest wins."""
+    try:
+        created_ist = datetime.datetime.fromisoformat(intent["created_at"]).replace(tzinfo=datetime.timezone.utc).astimezone(_IST)
+    except (KeyError, TypeError, ValueError):
+        return ""
+    since = (created_ist - datetime.timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    candidates = [
+        o for o in dhan_orders.values()
+        if str(o.get("securityId")) == str(intent.get("security_id"))
+        and (o.get("correlationId") or "").upper().endswith("_AUTO")
+        and (o.get("createTime") or "") >= since
+    ]
+    if not candidates:
+        return ""
+    best = max(candidates, key=lambda o: ((o.get("orderStatus") or "").upper() not in ("REJECTED", "CANCELLED"), o.get("createTime") or ""))
+    return str(best.get("orderId"))
+
+
 def _quantile_order_row(intent, dhan_orders, trades_for_date):
     original_sl = _num(intent.get("sl_price"))
     order_id = str(intent.get("order_id") or "")
     status = intent.get("status")
     stored = _json_safe(intent.get("dhan_snapshot") or {})
     snap = None
+
+    if not order_id:
+        # Open trade the bot hasn't reported yet — or one seen earlier
+        # today whose order_id only lives in our saved snapshot so far.
+        order_id = _match_auto_order(intent, dhan_orders) or str(stored.get("order_id") or "")
 
     if order_id and order_id in dhan_orders:
         snap = _super_order_snapshot(dhan_orders[order_id], original_sl)
@@ -1645,7 +1676,7 @@ def _quantile_order_row(intent, dhan_orders, trades_for_date):
         "exit_price": None,
         "exit_time": None,
         "close_reason": _OUTCOME_REASONS.get(intent.get("outcome")),
-        "state": {"pending": "queued", "claimed": "placing", "failed": "failed", "paper_filled": "paper"}.get(status, "closed" if status == "closed" else "unknown"),
+        "state": {"pending": "queued", "claimed": "placing", "live_filled": "active", "failed": "failed", "paper_filled": "paper"}.get(status, "closed" if status == "closed" else "unknown"),
         "dhan_status": None,
         "error": None,
     }
@@ -1676,7 +1707,9 @@ def api_admin_quantile_orders():
     intents = order_intent_connector.list_all_intents()
     dhan_error = None
     dhan_orders = {}
-    if any(i.get("order_id") and i.get("status") != "paper_filled" for i in intents):
+    # Also for "claimed" intents: an open trade has no order_id on the
+    # intent yet, and is matched against the order book instead.
+    if any((i.get("order_id") or i.get("status") == "claimed") and i.get("status") != "paper_filled" for i in intents):
         try:
             dhan_orders = dhan_connector.get_super_orders()
         except Exception as exc:
