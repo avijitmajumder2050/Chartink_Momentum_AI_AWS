@@ -166,7 +166,12 @@ def _fetch_raw(symbol):
         if resp.status_code != 200:
             continue
         candidate = BeautifulSoup(resp.text, "lxml")
-        if candidate.find("section", id="quarters"):
+        # Needs real period columns, not just the section: for a company
+        # with no subsidiaries (e.g. ELLEN) screener still serves a
+        # /consolidated/ page with the full layout but every table empty
+        # — accepting it meant a Research page with almost no data and no
+        # fallback to the standalone page, which has it all.
+        if _table_rows(candidate, "quarters")[1]:
             soup = candidate
             basis = candidate_basis
             break
@@ -299,10 +304,10 @@ def _documents(soup):
 
 
 def _get_raw(symbol):
-    # v2: the cached dict gained about/industry/pros/cons/growth/documents
-    # — a fresh key so entries cached before that are re-fetched, not read
-    # with those fields missing.
-    key = f"screener_raw_v2_{symbol.upper()}"
+    # Versioned so a change in what's cached forces a re-fetch: v2 added
+    # about/industry/pros/cons/growth/documents; v3 drops entries cached
+    # from an empty /consolidated/ page (see _fetch_raw).
+    key = f"screener_raw_v3_{symbol.upper()}"
     return cache.get_or_fetch(key, CACHE_TTL_SECONDS, lambda: _fetch_raw(symbol))
 
 

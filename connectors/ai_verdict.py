@@ -14,6 +14,8 @@ Parameter Store (see connectors/secrets.py) — set AWS_PROFILE to pick
 which AWS account/profile boto3 uses.
 """
 
+import hashlib
+import json
 import os
 
 try:
@@ -108,7 +110,17 @@ def _fetch(symbol, header, fundamentals, ratios, eps_strength, price_strength):
 
 
 def get_verdict(symbol, header, fundamentals, ratios, eps_strength=None, price_strength=None):
-    key = f"ai_verdict_{symbol.upper()}"
+    # A verdict needs something to judge. The empty /consolidated/ screener
+    # page ELLEN used to resolve to still listed every ratio NAME with a
+    # blank value ("Market Cap ₹ Cr."), so check for actual numbers, not
+    # just a non-empty list — otherwise it's written from nothing and
+    # cached for a day.
+    if not any(any(ch.isdigit() for ch in str(f.get("value", ""))) for f in fundamentals or []):
+        raise RuntimeError(f"no fundamentals for {symbol} — not generating a verdict")
+    # Keyed by the inputs too, so a verdict made from stale or incomplete
+    # data isn't served for 24h after the data changes.
+    inputs = json.dumps([fundamentals, ratios, eps_strength, price_strength], sort_keys=True, default=str)
+    key = f"ai_verdict_{symbol.upper()}_{hashlib.sha1(inputs.encode('utf-8')).hexdigest()[:12]}"
     return cache.get_or_fetch(
         key,
         CACHE_TTL_SECONDS,
