@@ -665,6 +665,12 @@ def api_research():
         app.logger.exception("price history fetch failed for %s", symbol)
 
     try:
+        # NSE announcements (order wins flagged) + order-win news naming it.
+        data.update(news_connector.get_stock_filings(symbol, data.get("header", {}).get("name")))
+    except Exception:
+        app.logger.exception("stock filings failed for %s", symbol)
+
+    try:
         data["aiVerdict"] = ai_verdict.get_verdict(
             symbol,
             data.get("header", {}),

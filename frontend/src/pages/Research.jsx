@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
+import { AboutCard, AnalysisCard, DocumentsCard, EfficiencyCard, FilingsCard, ShareholdingTrend } from "./ResearchExtras";
 
 // Ported from templates/research.html. New GET /api/research (app.py)
 // mirrors research()'s exact 4-connector orchestration and layered
@@ -65,6 +66,8 @@ export default function Research() {
 
   const sectionRefs = {
     overview: useRef(null),
+    analysis: useRef(null),
+    filings: useRef(null),
     financials: useRef(null),
     ratios: useRef(null),
     quarterly: useRef(null),
@@ -110,6 +113,9 @@ export default function Research() {
   }
 
   const symbol = urlSymbol;
+  // P&L columns: real year labels from the API (fallback: the old fixed set).
+  const plYears = data?.plYears?.length ? data.plYears : ["FY22", "FY23", "FY24", "FY25", "FY26"];
+  const plKeys = ["fy22", "fy23", "fy24", "fy25", "fy26"].slice(-plYears.length);
   const sectionStyle = { scrollMarginTop: 96 };
 
   return (
@@ -188,22 +194,22 @@ export default function Research() {
                     {data.header?.direction === "up" ? (
                       <>
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#17A673" strokeWidth="2"><path d="M2 8L6 4L10 8" /></svg>
-                        <span className="num" style={{ color: "#17A673", fontWeight: 600, fontSize: 14.5 }}>+{data.header?.changePct} (last close)</span>
+                        <span className="num" style={{ color: "#17A673", fontWeight: 600, fontSize: 14.5 }}>+{String(data.header?.changePct ?? "").replace(/^[+-]/, "")} (last close)</span>
                       </>
                     ) : (
                       <>
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#E0473F" strokeWidth="2"><path d="M2 4L6 8L10 4" /></svg>
-                        <span className="num" style={{ color: "#E0473F", fontWeight: 600, fontSize: 14.5 }}>-{data.header?.changePct} (last close)</span>
+                        <span className="num" style={{ color: "#E0473F", fontWeight: 600, fontSize: 14.5 }}>−{String(data.header?.changePct ?? "").replace(/^[+-]/, "")} (last close)</span>
                       </>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 22 }}>
+              <div style={{ display: "flex", gap: 8, marginTop: 22, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                 {[
-                  ["overview", "Overview"], ["financials", "Financials"], ["ratios", "Ratios"],
-                  ["quarterly", "Quarterly results"], ["shareholding", "Shareholding"],
+                  ["overview", "Overview"], ["analysis", "Analysis"], ["financials", "Financials"], ["ratios", "Ratios"],
+                  ["quarterly", "Quarterly results"], ["shareholding", "Shareholding"], ["filings", "Filings"],
                 ].map(([key, label]) => (
                   <button key={key} type="button" className={"pill-tab" + (activeTab === key ? " active" : "")} onClick={() => scrollToSection(key)}>
                     {label}
@@ -214,8 +220,9 @@ export default function Research() {
           </div>
 
           <div style={{ width: "100%", padding: "20px clamp(16px, 5vw, 48px) 0" }}>
-            <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", gap: 20, alignItems: "flex-start" }}>
-              <div style={{ flex: 1.6, display: "flex", flexDirection: "column", gap: 18 }}>
+            <style>{".research-main{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start} @media (max-width:960px){.research-main{grid-template-columns:minmax(0,1fr)}}"}</style>
+            <div className="research-main">
+              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
                 {data.aiVerdict && (
                   <div style={{ background: "#F1F0FD", border: "1px solid #DEDCFB", borderRadius: 18, padding: "22px 24px" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -281,28 +288,32 @@ export default function Research() {
                   )}
                 </div>
 
+                <div ref={sectionRefs.analysis} style={sectionStyle}>
+                  <AnalysisCard pros={data.pros} cons={data.cons} growth={data.growth} />
+                </div>
+
                 <div ref={sectionRefs.financials} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 14 }}>Profit &amp; loss (₹ Cr, standalone)</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 14 }}>Profit &amp; loss (₹ Cr{data.basis ? ", " + data.basis : ""})</span>
+                  <div className="table-wrap">
                   <table>
-                    <thead><tr><th>Particulars</th><th className="num">FY22</th><th className="num">FY23</th><th className="num">FY24</th><th className="num">FY25</th><th className="num">FY26E</th></tr></thead>
+                    <thead><tr><th>Particulars</th>{plYears.map((y) => <th key={y} className="num">{y}</th>)}</tr></thead>
                     <tbody>
                       {(data.plRows || []).map((r, i) => (
                         <tr key={i}>
                           <td style={{ fontWeight: r.weight }}>{r.label}</td>
-                          <td className="num">{r.fy22}</td>
-                          <td className="num">{r.fy23}</td>
-                          <td className="num">{r.fy24}</td>
-                          <td className="num">{r.fy25}</td>
-                          <td className="num" style={{ fontWeight: 700 }}>{r.fy26}</td>
+                          {plKeys.map((k, j) => (
+                            <td key={k} className="num" style={j === plKeys.length - 1 ? { fontWeight: 700 } : undefined}>{r[k]}</td>
+                          ))}
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 18 }}>
-                  <div style={{ flex: 1, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 12 }}>Balance sheet snapshot (FY25)</span>
+                <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 240px", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 12 }}>Balance sheet snapshot{data.balanceSheetYear ? " (" + data.balanceSheetYear + ")" : ""}</span>
                     {(data.balanceSheet || []).map((b, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid #F0F1F4" }}>
                         <span style={{ fontSize: 13, color: "#5B6270" }}>{b.label}</span>
@@ -310,8 +321,8 @@ export default function Research() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ flex: 1, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 12 }}>Cash flow snapshot (FY25)</span>
+                  <div style={{ flex: "1 1 240px", background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 12 }}>Cash flow snapshot{data.cashFlowYear ? " (" + data.cashFlowYear + ")" : ""}</span>
                     {(data.cashFlow || []).map((c, i) => (
                       <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid #F0F1F4" }}>
                         <span style={{ fontSize: 13, color: "#5B6270" }}>{c.label}</span>
@@ -323,6 +334,7 @@ export default function Research() {
 
                 <div ref={sectionRefs.quarterly} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 24 }}>
                   <span style={{ fontSize: 15, fontWeight: 700, display: "block", marginBottom: 14 }}>Quarterly results (₹ Cr)</span>
+                  <div className="table-wrap">
                   <table>
                     <thead><tr><th>Quarter</th><th className="num">Revenue</th><th className="num">Net Profit</th><th className="num">EPS (₹)</th><th className="num">YoY</th></tr></thead>
                     <tbody>
@@ -337,15 +349,17 @@ export default function Research() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
+                </div>
+
+                <div ref={sectionRefs.filings} style={{ ...sectionStyle, display: "flex", flexDirection: "column", gap: 18 }}>
+                  <FilingsCard filings={data.filings} orderWinNews={data.orderWinNews} fallback={data.documents?.announcements} />
+                  <DocumentsCard documents={data.documents} />
                 </div>
               </div>
 
-              <div style={{ width: 320, display: "flex", flexDirection: "column", gap: 18, flexShrink: 0 }}>
-                <div style={{ background: "#14171F", borderRadius: 18, padding: 22, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "white" }}>Add to watchlist</span>
-                  <p style={{ fontSize: 12.5, color: "#9297A8", lineHeight: 1.6, margin: 0 }}>Get price alerts and daily fundamentals digest for {symbol}.</p>
-                  <div style={{ background: "#4640DE", color: "white", fontSize: 13, fontWeight: 700, padding: "10px 0", borderRadius: 8, textAlign: "center", marginTop: 4 }}>+ Add stock</div>
-                </div>
+              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 18 }}>
+                <AboutCard about={data.about} keyPoints={data.keyPoints} industry={data.industry} />
 
                 <div ref={sectionRefs.ratios} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 16 }}>5-year ratio trend</span>
@@ -361,6 +375,8 @@ export default function Research() {
                     </div>
                   ))}
                 </div>
+
+                <EfficiencyCard rows={data.efficiency} />
 
                 <div ref={sectionRefs.shareholding} style={{ ...sectionStyle, background: "#FFFFFF", border: "1px solid #E3E6EC", borderRadius: 16, padding: 22 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, display: "block", marginBottom: 14 }}>Shareholding pattern</span>
@@ -378,6 +394,7 @@ export default function Research() {
                       <span className="num" style={{ fontSize: 12.5, fontWeight: 700 }}>{s.pct}</span>
                     </div>
                   ))}
+                  <ShareholdingTrend trend={data.shareholdingTrend} />
                 </div>
               </div>
             </div>

@@ -160,13 +160,15 @@ def _fetch_raw(symbol):
     session.headers.update({"User-Agent": USER_AGENT})
 
     soup = None
-    for url_template in (BASE_URL, FALLBACK_URL):
+    basis = None
+    for url_template, candidate_basis in ((BASE_URL, "consolidated"), (FALLBACK_URL, "standalone")):
         resp = session.get(url_template.format(symbol=symbol), timeout=15)
         if resp.status_code != 200:
             continue
         candidate = BeautifulSoup(resp.text, "lxml")
         if candidate.find("section", id="quarters"):
             soup = candidate
+            basis = candidate_basis
             break
 
     if soup is None:
@@ -184,11 +186,123 @@ def _fetch_raw(symbol):
         "cash_flow": _table_rows(soup, "cash-flow"),
         "ratios": _table_rows(soup, "ratios"),
         "shareholding": _table_rows(soup, "shareholding"),
+        # Which screener page the numbers came from — the P&L title used
+        # to always say "standalone", though consolidated is tried first.
+        "basis": basis,
+        # Same page, previously discarded — no extra requests.
+        "about": _profile_text(soup, ".company-profile .about"),
+        "key_points": _profile_text(soup, ".company-profile .commentary"),
+        "industry": _industry(soup),
+        "pros": _analysis_points(soup, "pros"),
+        "cons": _analysis_points(soup, "cons"),
+        "growth": _growth_tables(soup),
+        "documents": _documents(soup),
     }
 
 
+PROFILE_MAX_CHARS = 700
+INDUSTRY_LEVELS = ("Broad Sector", "Sector", "Broad Industry", "Industry")
+
+
+def _profile_text(soup, selector):
+    """About / key-points blurb, minus screener's [1] [2] source-footnote
+    links, trimmed at a sentence boundary."""
+    el = soup.select_one(selector)
+    if el is None:
+        return None
+    for sup in el.find_all("sup"):
+        sup.decompose()
+    text = re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip()
+    text = re.sub(r"\s+([.,;:])", r"\1", text)
+    if len(text) > PROFILE_MAX_CHARS:
+        cut = text[:PROFILE_MAX_CHARS]
+        text = (cut[: cut.rfind(". ") + 1] if ". " in cut else cut.rstrip() + "…")
+    return text or None
+
+
+def _industry(soup):
+    """screener's classification breadcrumb, e.g. Commodities › Metals &
+    Mining › Ferrous Metals › Iron & Steel. The same line also lists every
+    index the stock belongs to; only the four classification levels
+    (identified by their title attribute) are kept."""
+    peers = soup.find("section", id="peers")
+    if peers is None:
+        return []
+    out = []
+    for a in peers.select("p.sub a"):
+        label = a.get_text(strip=True)
+        # Two levels can share a name (HDFCBANK: "Financial Services" ›
+        # "Financial Services") — keep one.
+        if a.get("title") in INDUSTRY_LEVELS and (not out or out[-1]["label"] != label):
+            out.append({"level": a.get("title"), "label": label})
+    return out
+
+
+def _analysis_points(soup, kind):
+    el = soup.select_one(f"#analysis .{kind}")
+    return [li.get_text(" ", strip=True) for li in el.find_all("li")] if el else []
+
+
+def _growth_tables(soup):
+    """Compounded Sales / Profit Growth, Stock Price CAGR, Return on Equity
+    — each a small 10y/5y/3y/TTM table under the P&L section."""
+    tables = []
+    for t in soup.select("#profit-loss table.ranges-table"):
+        rows = [[c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])] for tr in t.find_all("tr")]
+        if not rows or not rows[0]:
+            continue
+        values = [{"period": r[0].rstrip(":"), "value": r[1]} for r in rows[1:] if len(r) >= 2]
+        if values:
+            tables.append({"title": rows[0][0], "values": values})
+    return tables
+
+
+DOCUMENTS_PER_BLOCK = 3
+ANNOUNCEMENTS_KEPT = 6
+
+
+def _doc_links(block, limit):
+    out = []
+    for li in block.select("li")[:limit]:
+        a = li.find("a", href=True)
+        if a is None:
+            continue
+        out.append({"label": re.sub(r"\s+", " ", li.get_text(" ", strip=True)).replace(" AI Summary", ""), "url": a["href"]})
+    return out
+
+
+def _documents(soup):
+    """Annual reports, credit ratings, concall links (Transcript / PPT /
+    recording) and recent BSE announcements from the Documents section."""
+    section = soup.find("section", id="documents")
+    if section is None:
+        return {}
+    out = {}
+    for block in section.select(".documents"):
+        heading = block.find("h3")
+        title = heading.get_text(strip=True) if heading else ""
+        if title == "Concalls":
+            calls = []
+            for li in block.select("li")[:DOCUMENTS_PER_BLOCK]:
+                period = li.find("div")
+                links = [{"label": a.get_text(strip=True), "url": a["href"]} for a in li.find_all("a", href=True)]
+                if period and links:
+                    calls.append({"period": period.get_text(strip=True), "links": links})
+            out["concalls"] = calls
+        elif title == "Annual reports":
+            out["annualReports"] = _doc_links(block, DOCUMENTS_PER_BLOCK)
+        elif title == "Credit ratings":
+            out["creditRatings"] = _doc_links(block, DOCUMENTS_PER_BLOCK)
+        elif title == "Announcements":
+            out["announcements"] = _doc_links(block, ANNOUNCEMENTS_KEPT)
+    return out
+
+
 def _get_raw(symbol):
-    key = f"screener_raw_{symbol.upper()}"
+    # v2: the cached dict gained about/industry/pros/cons/growth/documents
+    # — a fresh key so entries cached before that are re-fetched, not read
+    # with those fields missing.
+    key = f"screener_raw_v2_{symbol.upper()}"
     return cache.get_or_fetch(key, CACHE_TTL_SECONDS, lambda: _fetch_raw(symbol))
 
 
@@ -366,13 +480,88 @@ def get_fundamentals_data(symbol):
     return {
         "symbol": symbol.upper(),
         "header": raw["header"],
+        # Real column labels — the page used to hard-code FY22..FY26E /
+        # "(FY25)", which drifts as screener adds years.
+        "plYears": [_fy_label(y) for y in annual_years],
+        "balanceSheetYear": _fy_label(bs_years[-1]) if bs_years else None,
+        "basis": raw.get("basis"),
+        "cashFlowYear": _fy_label(cf_years[-1]) if cf_years else None,
         "plRows": plRows,
         "balanceSheet": balanceSheet,
         "cashFlow": cashFlow,
         "quarters": quarters,
         "ratios": ratios,
         "shareholding": shareholding,
+        "shareholdingTrend": _shareholding_trend(sh_rows, sh_years),
+        "efficiency": _efficiency(ratios_rows, ratios_years),
+        "about": raw.get("about"),
+        "keyPoints": raw.get("key_points"),
+        "industry": raw.get("industry") or [],
+        "pros": raw.get("pros") or [],
+        "cons": raw.get("cons") or [],
+        "growth": raw.get("growth") or [],
+        "documents": raw.get("documents") or {},
     }
+
+
+def _fy_label(year_header):
+    """'Mar 2026' -> 'FY26' (Indian fiscal year ends in March); other
+    year-ends -> 'Dec 25'; 'TTM' unchanged."""
+    parts = str(year_header).split()
+    if len(parts) != 2:
+        return str(year_header)
+    month, year = parts
+    return f"FY{year[-2:]}" if month == "Mar" else f"{month} {year[-2:]}"
+
+
+SHAREHOLDING_TREND_QUARTERS = 8
+
+
+def _shareholding_trend(sh_rows, sh_years):
+    """Last SHAREHOLDING_TREND_QUARTERS quarters per holder category, plus
+    the change in percentage points over that span — the quarterly table
+    was already parsed in full; the page only ever showed its last column."""
+    if not sh_years:
+        return None
+    n = min(SHAREHOLDING_TREND_QUARTERS, len(sh_years))
+    quarters = sh_years[-n:]
+    rows = []
+    shareholders = None
+    for label, values in sh_rows.items():
+        tail = values[-n:]
+        if label.startswith("No. of Shareholders"):
+            nums = [_clean_num(v) for v in tail]
+            if any(v is not None for v in nums):
+                shareholders = {"values": tail, "change": (nums[-1] - nums[0]) if nums[0] and nums[-1] is not None else None}
+            continue
+        nums = [_clean_num(v) for v in tail]
+        if not tail or not str(tail[-1]).endswith("%") or nums[0] is None or nums[-1] is None:
+            continue
+        rows.append({
+            "label": label,
+            "values": [f"{v:.2f}%" if v is not None else "—" for v in nums],
+            "change": round(nums[-1] - nums[0], 2),
+            "points": sparkline_points([v for v in nums if v is not None]),
+            "color": SHAREHOLDING_COLORS.get(label, "#D8DAE3"),
+        })
+    return {"quarters": quarters, "rows": rows, "shareholders": shareholders}
+
+
+EFFICIENCY_ROWS = ["Debtor Days", "Inventory Days", "Days Payable", "Cash Conversion Cycle", "Working Capital Days"]
+
+
+def _efficiency(ratios_rows, ratios_years):
+    """Latest year vs the year before for screener's working-capital
+    ratios (days — lower is generally better). Banks have none of these."""
+    out = []
+    for label in EFFICIENCY_ROWS:
+        values = [(y, _clean_num(v)) for y, v in zip(ratios_years, ratios_rows.get(label, [])) if _clean_num(v) is not None]
+        if not values:
+            continue
+        latest_year, latest = values[-1]
+        prev = values[-2][1] if len(values) >= 2 else None
+        out.append({"label": label, "year": latest_year, "value": latest, "previous": prev, "change": (latest - prev) if prev is not None else None})
+    return out
 
 
 def _fetch_price_series(company_id, days):

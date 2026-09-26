@@ -397,3 +397,72 @@ def get_news_data():
     # No outer cache: each source above is already cached on its own
     # short TTL, and merging them is cheap.
     return _fetch_all()
+
+
+# ---------------------------------------------------------------------
+# Per-stock filings for the Research page
+# ---------------------------------------------------------------------
+STOCK_FILINGS_DAYS = 30
+STOCK_FILINGS_CACHE_TTL_SECONDS = 30 * 60
+STOCK_FILINGS_MAX = 10
+
+
+def _fetch_nse_stock_filings(symbol):
+    today = datetime.datetime.now(IST).date()
+    start = today - datetime.timedelta(days=STOCK_FILINGS_DAYS)
+    session = requests.Session()
+    session.headers.update({**BROWSER_HEADERS, "Accept": "application/json", "Referer": "https://www.nseindia.com/companies-listing/corporate-filings-announcements"})
+    session.get(NSE_HOME_URL, timeout=HTTP_TIMEOUT_SECONDS)
+    resp = session.get(
+        NSE_ANNOUNCEMENTS_URL,
+        params={"index": "equities", "symbol": symbol, "from_date": start.strftime("%d-%m-%Y"), "to_date": today.strftime("%d-%m-%Y")},
+        timeout=HTTP_TIMEOUT_SECONDS,
+    )
+    resp.raise_for_status()
+    items = []
+    for row in resp.json():
+        desc = (row.get("desc") or "").strip()
+        text = (row.get("attchmntText") or "").strip()
+        # "X Limited has informed the Exchange about/regarding ..." — keep
+        # just what it's about.
+        detail = re.sub(r"^.*?has informed the exchange (?:about|regarding)\s*[-–:]?\s*", "", text, flags=re.I).strip()
+        items.append({
+            "category": desc,
+            "detail": detail if detail and detail.lower() != desc.lower() else "",
+            "link": row.get("attchmntFile"),
+            "publishedAt": _ist_to_iso(row.get("an_dt"), "%d-%b-%Y %H:%M:%S"),
+            "orderWin": desc.lower() in NSE_ORDER_WIN_DESCS or is_order_win(text),
+        })
+    return _newest_first(items)
+
+
+def _company_core(name):
+    """'Tata Steel Ltd' -> 'tata steel'; used to match order-win headlines
+    that name the company rather than its ticker."""
+    return _company_key(re.sub(r"\b(india|industries|enterprises|corporation|company|co)\b", "", (name or "").lower()))
+
+
+def get_stock_filings(symbol, company_name=None):
+    """{filings, orderWinNews, source} for one stock: its last
+    STOCK_FILINGS_DAYS days of NSE announcements (order wins flagged),
+    plus any order-win news from the News page's feeds naming it.
+    filings is None if NSE couldn't be reached (the page then falls back
+    to screener's BSE announcements)."""
+    symbol = symbol.strip().upper()
+    try:
+        filings = cache.get_or_fetch(f"nse_stock_filings_{symbol}", STOCK_FILINGS_CACHE_TTL_SECONDS, lambda: _fetch_nse_stock_filings(symbol))[:STOCK_FILINGS_MAX]
+    except Exception:
+        filings = None
+
+    core = _company_core(company_name)
+    news = []
+    try:
+        for w in get_news_data().get("orderWins", []):
+            if w.get("kind") != "news":
+                continue  # filings already come from NSE above
+            headline = w.get("headline") or ""
+            if re.search(rf"\b{re.escape(symbol)}\b", headline, re.I) or (len(core) >= 4 and core in _company_key(headline)):
+                news.append(w)
+    except Exception:
+        pass
+    return {"filings": filings, "orderWinNews": news[:5]}
