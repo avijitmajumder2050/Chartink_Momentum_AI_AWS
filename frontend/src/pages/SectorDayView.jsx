@@ -39,19 +39,21 @@ function heatFill(pct) {
 const EXTRA_TILES = new Set(["NIFTY ENERGY", "NIFTYINFRA"]);
 
 // Trend chart shows the TREND_COUNT sectors with the strongest (or, with
-// the toggle, weakest) 5-session momentum, re-picked on every refresh.
-// Because the set changes, colour is by rank slot (1st = blue, ...)
-// rather than tied to a sector; the legend names every line with its
-// 5-day %, so identity never rests on colour alone. Colours are the
+// the toggle, weakest) momentum over the chosen period (TREND_PERIODS),
+// re-picked on every refresh. Because the set changes, colour is by rank
+// slot (1st = blue, ...) rather than tied to a sector; the legend names
+// every line with its period %, so identity never rests on colour alone. Colours are the
 // reference palette's dark categorical slots 1-5, validated on T.card.
 const TREND_COUNT = 5;
 const TREND_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
 // Look-back options for the trend chart, in trading sessions (a week =
-// 5). The API sends 30 recent closes per index, enough for all three.
+// 5). The API sends 30 recent closes per index (RECENT_BARS), enough for
+// all of these — the longest, 20 sessions, needs 21.
 const TREND_PERIODS = [
   { key: "1w", label: "1 week", sessions: 5 },
   { key: "2w", label: "2 weeks", sessions: 10 },
   { key: "3w", label: "3 weeks", sessions: 15 },
+  { key: "4w", label: "4 weeks", sessions: 20 },
 ];
 
 const fmt = (n, d = 2) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }));
