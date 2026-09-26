@@ -38,16 +38,14 @@ function heatFill(pct) {
 // Sector tiles: every "Sector" index plus two sector-like thematics.
 const EXTRA_TILES = new Set(["NIFTY ENERGY", "NIFTYINFRA"]);
 
-// Fixed trend-chart series — a fixed set so each sector keeps its colour
-// every day (colour follows the entity, never its rank). Colours are the
+// Trend chart shows the TREND_COUNT sectors with the strongest (or, with
+// the toggle, weakest) 5-session momentum, re-picked on every refresh.
+// Because the set changes, colour is by rank slot (1st = blue, ...)
+// rather than tied to a sector; the legend names every line with its
+// 5-day %, so identity never rests on colour alone. Colours are the
 // reference palette's dark categorical slots 1-5, validated on T.card.
-const TREND_SERIES = [
-  { symbol: "BANKNIFTY", label: "Bank", color: "#3987e5" },
-  { symbol: "NIFTYIT", label: "IT", color: "#d95926" },
-  { symbol: "NIFTY AUTO", label: "Auto", color: "#199e70" },
-  { symbol: "NIFTY FMCG", label: "FMCG", color: "#c98500" },
-  { symbol: "NIFTY ENERGY", label: "Energy", color: "#d55181" },
-];
+const TREND_COUNT = 5;
+const TREND_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
 const TREND_SESSIONS = 6; // 5 day-over-day changes
 
 const fmt = (n, d = 2) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -360,19 +358,31 @@ export default function SectorDayView({ data }) {
     [rows],
   );
 
-  const trend = useMemo(() => {
-    const series = TREND_SERIES.map((s) => ({ ...s, row: bySymbol[s.symbol] })).filter((s) => s.row?.recent?.length >= TREND_SESSIONS);
-    if (!series.length) return [];
-    const dates = series[0].row.recent.slice(-TREND_SESSIONS).map((p) => p.t);
-    return series
-      .map((s) => {
-        const byDate = Object.fromEntries(s.row.recent.map((p) => [p.t, p.c]));
+  // Every tile sector indexed to 100 over the last 5 sessions (common
+  // dates taken from NIFTY so all lines share one x-axis).
+  const trendPool = useMemo(() => {
+    const dates = bySymbol.NIFTY?.recent?.slice(-TREND_SESSIONS).map((p) => p.t);
+    if (!dates || dates.length < TREND_SESSIONS) return [];
+    return tiles
+      .map((row) => {
+        const byDate = Object.fromEntries((row.recent || []).map((p) => [p.t, p.c]));
         const vals = dates.map((d) => byDate[d]);
         if (vals.some((v) => v == null)) return null;
-        return { ...s, points: dates.map((t, i) => ({ t, v: (vals[i] / vals[0]) * 100 })), change5d: (vals[vals.length - 1] / vals[0] - 1) * 100 };
+        return {
+          symbol: row.symbol,
+          label: tileName(row.name),
+          points: dates.map((t, i) => ({ t, v: (vals[i] / vals[0]) * 100 })),
+          change5d: (vals[vals.length - 1] / vals[0] - 1) * 100,
+        };
       })
       .filter(Boolean);
-  }, [bySymbol]);
+  }, [bySymbol, tiles]);
+
+  const [trendMode, setTrendMode] = useState("positive");
+  const trend = useMemo(() => {
+    const ranked = [...trendPool].sort((a, b) => (trendMode === "positive" ? b.change5d - a.change5d : a.change5d - b.change5d));
+    return ranked.slice(0, TREND_COUNT).map((s, i) => ({ ...s, color: TREND_COLORS[i] }));
+  }, [trendPool, trendMode]);
 
   const insights = useMemo(() => buildInsights(tiles, data?.breadth), [tiles, data]);
   const nifty = bySymbol.NIFTY;
@@ -438,9 +448,31 @@ export default function SectorDayView({ data }) {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
           <div style={{ ...card, padding: 18 }}>
-            <span style={{ fontSize: 16, fontWeight: 700 }}>
-              Sector trend <span style={{ fontSize: 13, fontWeight: 500, color: T.text2 }}>(last 5 sessions, indexed to 100)</span>
-            </span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>
+                Sector trend <span style={{ fontSize: 13, fontWeight: 500, color: T.text2 }}>(last 5 sessions, indexed to 100)</span>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.muted, marginTop: 2 }}>
+                  Top {TREND_COUNT} by {trendMode} momentum
+                </span>
+              </span>
+              <div role="group" aria-label="Momentum direction" style={{ display: "flex", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: 3 }}>
+                {[["positive", "▲ Positive"], ["negative", "▼ Negative"]].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={trendMode === key}
+                    onClick={() => setTrendMode(key)}
+                    style={{
+                      border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, padding: "6px 11px", borderRadius: 7, whiteSpace: "nowrap",
+                      background: trendMode === key ? (key === "positive" ? "#1F6B45" : "#772A34") : "transparent",
+                      color: trendMode === key ? "#FFFFFF" : T.text2,
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {trend.length ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12, alignItems: "center" }}>
                 <div style={{ flex: "1 1 260px", minWidth: 0 }}>
@@ -448,7 +480,7 @@ export default function SectorDayView({ data }) {
                 </div>
                 <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10, flex: "0 0 auto" }}>
                   {trend.map((s) => (
-                    <li key={s.symbol} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, justifyContent: "space-between", minWidth: 120 }}>
+                    <li key={s.symbol} style={{ display: "flex", alignItems: "center", fontSize: 13, justifyContent: "space-between", gap: 14, minWidth: 150 }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: T.text }}>
                         <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color }} />
                         {s.label}
