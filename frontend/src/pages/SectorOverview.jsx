@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 
 // GET /api/markets/sectors (app.py -> connectors/sector_connector.py):
@@ -26,6 +27,11 @@ const COLUMNS = [
   { key: "rsi14", label: "RSI (14)" },
   { key: "signal", label: "Signal", align: "left", sortable: false },
 ];
+
+// The chart page resolves index names against Dhan's index master (every
+// symbol in sector_indices.csv was checked to resolve to its own id, with
+// no clash against a watchlist stock of the same name).
+const chartHref = (symbol) => `/markets/chart?symbol=${encodeURIComponent(symbol)}`;
 
 const GREEN = "#17A673";
 const RED = "#E0473F";
@@ -127,6 +133,7 @@ export default function SectorOverview() {
 
   return (
     <div style={{ width: "100%", padding: "clamp(24px, 5vw, 48px) clamp(16px, 5vw, 48px) 80px" }}>
+      <style>{".sector-chart-icon{opacity:.35;transition:opacity .15s} .sector-chart-link:hover .sector-chart-icon,.sector-chart-link:focus-visible .sector-chart-icon{opacity:1} .sector-chart-link:hover > span:first-child{color:#4640DE}"}</style>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
         <div>
           <span style={{ color: "#4640DE", fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Markets</span>
@@ -221,8 +228,18 @@ export default function SectorOverview() {
                       rows.map((r) => (
                         <tr key={r.securityId} style={{ borderBottom: "1px solid #F0F1F4", background: r.eligible ? "#F3FBF8" : "transparent" }}>
                           <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
-                            <span style={{ fontSize: 13.5, fontWeight: 700, display: "block" }}>{r.name}</span>
-                            <span style={{ fontSize: 11.5, color: "#8A90A0" }}>{r.category}</span>
+                            <Link to={chartHref(r.symbol)} className="sector-chart-link" title={`Open ${r.name} chart`} style={{ color: "inherit", textDecoration: "none", display: "inline-flex", flexDirection: "column" }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                {r.name}
+                                <svg className="sector-chart-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#4640DE" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M2 12L6 7.5L9 10L14 4" />
+                                  <path d="M10.5 4H14V7.5" />
+                                </svg>
+                              </span>
+                              <span style={{ fontSize: 11.5, color: "#8A90A0" }}>
+                                <span style={{ fontFamily: "'IBM Plex Mono', monospace", color: "#4640DE", fontWeight: 600 }}>{r.symbol}</span> · {r.category}
+                              </span>
+                            </Link>
                           </td>
                           <td className="num" style={{ padding: "12px 14px", textAlign: "right", fontSize: 13, fontWeight: 600 }}>{fmt(r.close)}</td>
                           <td className="num" style={{ padding: "12px 14px", textAlign: "right", fontSize: 13, fontWeight: 600, color: pctColor(r.changePct) }}>{pct(r.changePct)}</td>
