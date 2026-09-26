@@ -2286,6 +2286,73 @@ AUTO_BREAKOUT_WINDOW_START = f"09:{15 + first_minute_mod.INTERVAL_MINUTES * 2:02
 AUTO_BREAKOUT_WINDOW_END = "10:30"
 _auto_breakout_state = {"date": None, "done": False, "symbols": None, "resolved": set(), "executor_prewarmed": False}
 
+# _auto_breakout_state is also saved to disk after every tick and
+# restored on the first tick after a restart — otherwise a backend
+# restart (deploy, EC2 stop/start) inside the window forgot the day's
+# progress: it re-scanned, could lock in a different top-N, re-created
+# the same "New watch" alerts, and — if a winner had already been
+# picked — resumed qualifying, letting a second stock trigger a second
+# order. .cache/ is git-ignored and on the instance's own disk, so it
+# survives both a service restart and an instance stop/start.
+AUTO_BREAKOUT_STATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+
+
+def _auto_breakout_state_path(date_str):
+    return os.path.join(AUTO_BREAKOUT_STATE_DIR, f"auto_breakout_state_{date_str}.json")
+
+
+def _save_auto_breakout_state():
+    state = _auto_breakout_state
+    if not state["date"]:
+        return
+    payload = {**state, "resolved": sorted(state["resolved"])}
+    path = _auto_breakout_state_path(state["date"])
+    try:
+        os.makedirs(AUTO_BREAKOUT_STATE_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, path)  # atomic — a crash mid-write can't leave a half file
+    except OSError as exc:
+        print(f"[auto-breakout] couldn't save state: {exc}", file=sys.stderr)
+
+
+def _load_auto_breakout_state(date_str):
+    try:
+        with open(_auto_breakout_state_path(date_str), encoding="utf-8") as fh:
+            saved = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if saved.get("date") != date_str:
+        return None
+    return {**saved, "resolved": set(saved.get("resolved") or [])}
+
+
+def _todays_breakout_entries(today_str):
+    """Every breakout alert created today (active or not) — the database's
+    own record of what already ran, used as a backstop if the saved state
+    file is ever missing (e.g. a freshly launched instance)."""
+    try:
+        entries = campaign_connector.list_entries()
+    except Exception as exc:
+        print(f"[auto-breakout] couldn't read today's entries: {exc}", file=sys.stderr)
+        return []
+    return [e for e in entries if e.get("source") == "first_minute_movers" and (e.get("created_at") or "").startswith(today_str)]
+
+
+def _start_auto_breakout_day(today_str):
+    restored = _load_auto_breakout_state(today_str)
+    if restored:
+        _auto_breakout_state.update(restored)
+        print(f"[auto-breakout] {today_str}: resumed saved state after restart (done={restored['done']}, symbols={restored['symbols']})", file=sys.stderr)
+        return
+    _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set(), executor_prewarmed=False)
+    todays = _todays_breakout_entries(today_str)
+    if any("entry_triggered" in (e.get("milestones_notified") or []) for e in todays):
+        # Today's race already has a winner — never qualify more stocks.
+        _auto_breakout_state["done"] = True
+        print(f"[auto-breakout] {today_str}: no saved state, but today's winner already triggered — nothing more to do today", file=sys.stderr)
+
 # The dedicated-IP order-executor pipeline (trading-bot-algo polling
 # quantile-order-intents) has been built and end-to-end tested against
 # real infra (see 2026-09-21 verification). Enabled for tomorrow's
@@ -2317,10 +2384,17 @@ def _auto_create_breakout_alerts():
     now = datetime.datetime.now(chart_connector.IST)
     today_str = now.strftime("%Y-%m-%d")
     if _auto_breakout_state["date"] != today_str:
-        _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set(), executor_prewarmed=False)
+        _start_auto_breakout_day(today_str)
 
     if _auto_breakout_state["done"]:
         return
+    try:
+        _auto_breakout_tick(now, today_str)
+    finally:
+        _save_auto_breakout_state()
+
+
+def _auto_breakout_tick(now, today_str):
     now_hm = now.strftime("%H:%M")
     if now_hm < AUTO_BREAKOUT_WINDOW_START:
         return
@@ -2368,6 +2442,14 @@ def _auto_create_breakout_alerts():
         print(f"[auto-breakout] {today_str}: locked in top {AUTO_BREAKOUT_TOP_N} gainers {_auto_breakout_state['symbols']}", file=sys.stderr)
 
     pending = [s for s in _auto_breakout_state["symbols"] if s not in _auto_breakout_state["resolved"]]
+    if pending:
+        # Backstop against duplicates if the saved state was lost: a stock
+        # that already has a breakout alert today is done, not re-created.
+        already = {e.get("symbol") for e in _todays_breakout_entries(today_str)} & set(pending)
+        if already:
+            _auto_breakout_state["resolved"] |= already
+            pending = [s for s in pending if s not in already]
+            print(f"[auto-breakout] {today_str}: skipping {sorted(already)} - already have an alert today", file=sys.stderr)
     if pending:
         results = _create_breakout_entries_for_symbols(pending, created_by="auto-breakout-bot")
         for r in results:
@@ -2712,6 +2794,7 @@ def _breakout_watch_once():
     # it sees a new date.
     if _auto_breakout_state["date"] == today_str:
         _auto_breakout_state["done"] = True
+        _save_auto_breakout_state()
 
     print(f"[breakout-watch] {today_str}: {entry['symbol']} won (lowest SL%, entry triggered at {current_price:.2f}) among {len(crossed)} crossed this tick - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
 
