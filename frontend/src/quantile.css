@@ -1003,6 +1003,82 @@ tbody tr:hover { background: var(--surface-2); }
   color: var(--text-faint);
 }
 
+/* ---- Floating "admin updates" chat widget (subscriber dashboard) ---- */
+.chat-widget-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 28px rgba(70, 64, 222, 0.35);
+  position: relative;
+}
+.chat-widget-btn:hover { background: var(--accent-hover); }
+.chat-widget-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--down);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface);
+}
+.chat-widget-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: min(360px, calc(100vw - 40px));
+  max-height: min(65vh, 480px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(20, 23, 31, 0.18);
+  animation: pushBannerIn 0.2s ease;
+  overflow: hidden;
+}
+.chat-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.chat-widget-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-faint);
+  padding: 2px 4px;
+}
+.chat-widget-close:hover { color: var(--text-dim); }
+.chat-widget-list {
+  overflow-y: auto;
+  padding: 6px;
+}
+@media (max-width: 480px) {
+  .chat-widget-btn { width: 50px; height: 50px; }
+}
+
 /* Admin campaign-builder live preview: same card, framed like a phone/app
    notification rather than a dropdown-list row. */
 .notif-preview-frame {

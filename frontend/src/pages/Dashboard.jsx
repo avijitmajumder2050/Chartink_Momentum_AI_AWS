@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { formatISTDateTime } from "../utils/formatDate";
+import CampaignChatWidget from "../components/CampaignChatWidget";
 
 // Ported from templates/subscriber_dashboard.html. New GET /api/dashboard/
 // bootstrap (app.py) replaces the fast synchronous part that used to be
@@ -164,6 +165,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ width: "100%", padding: "clamp(20px, 5vw, 36px) clamp(16px, 4vw, 40px) 80px" }}>
+      <CampaignChatWidget />
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 26, flexWrap: "wrap", gap: 12 }}>
           <div>
