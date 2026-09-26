@@ -214,7 +214,31 @@ function SectorTile({ row, mode }) {
 }
 
 // ---- 5-day trend chart (indexed to 100) ----
-function TrendChart({ series }) {
+// Benchmark line: neutral and dashed, so it reads as the reference and
+// never as a sixth sector.
+const BENCH_COLOR = "#C9CCD6";
+
+// Outperform / underperform vs NIFTY 50 over the period, in percentage
+// points. Word + arrow carry the meaning; colour only reinforces it.
+function RelBadge({ value }) {
+  if (value == null) return <span />;
+  const r = Number(value.toFixed(1));
+  const out = r > 0;
+  const flat = r === 0;
+  const color = flat ? T.text2 : out ? T.up : T.down;
+  const bg = flat ? "rgba(255,255,255,0.06)" : out ? "rgba(74,222,156,0.12)" : "rgba(248,113,113,0.12)";
+  const verb = flat ? "In line with" : out ? "Outperformed" : "Underperformed";
+  return (
+    <span
+      title={`${verb} NIFTY 50 by ${fmt(Math.abs(r), 1)} percentage points`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color, background: bg, padding: "2px 7px", borderRadius: 100, whiteSpace: "nowrap" }}
+    >
+      {flat ? "= In line" : `${out ? "▲ Outperform" : "▼ Underperform"} ${signed(r, 1)} pts`}
+    </span>
+  );
+}
+
+function TrendChart({ series, benchmark }) {
   const [hover, setHover] = useState(null);
   // Drawn at its real pixel width (not a fixed viewBox scaled to fit),
   // so axis text stays 11px instead of shrinking with the card.
@@ -230,7 +254,7 @@ function TrendChart({ series }) {
   const H = 220;
   const pad = { l: 38, r: 12, t: 12, b: 28 };
   const dates = series[0]?.points.map((p) => p.t) || [];
-  const all = series.flatMap((s) => s.points.map((p) => p.v));
+  const all = [...series, ...(benchmark ? [benchmark] : [])].flatMap((s) => s.points.map((p) => p.v));
   if (!dates.length || !all.length) return <div ref={wrapRef} />;
   let lo = Math.min(...all);
   let hi = Math.max(...all);
@@ -266,6 +290,9 @@ function TrendChart({ series }) {
           <text key={d} x={x(i)} y={H - 8} fontSize="11" fill={T.muted} textAnchor={i === dates.length - 1 ? "end" : "middle"}>{shortDate(d)}</text>
         ) : null))}
         {hover != null && <line x1={x(hover)} x2={x(hover)} y1={pad.t} y2={H - pad.b} stroke={T.text2} strokeWidth="1" opacity="0.5" />}
+        {benchmark && (
+          <polyline points={benchmark.points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")} fill="none" stroke={BENCH_COLOR} strokeWidth="2" strokeDasharray="6 5" strokeLinejoin="round" strokeLinecap="round" />
+        )}
         {series.map((s) => (
           <polyline key={s.symbol} points={s.points.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         ))}
@@ -273,6 +300,7 @@ function TrendChart({ series }) {
           series.map((s) => (
             <circle key={s.symbol} cx={x(hover)} cy={y(s.points[hover].v)} r="4" fill={s.color} stroke={T.card} strokeWidth="2" />
           ))}
+        {hover != null && benchmark && <circle cx={x(hover)} cy={y(benchmark.points[hover].v)} r="4" fill={T.card} stroke={BENCH_COLOR} strokeWidth="2" />}
       </svg>
       {hover != null && (
         <div
@@ -282,15 +310,30 @@ function TrendChart({ series }) {
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 4 }}>{shortDate(dates[hover])}</div>
-          {[...series].sort((a, b) => b.points[hover].v - a.points[hover].v).map((s) => (
-            <div key={s.symbol} style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "space-between" }}>
+          {benchmark && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", paddingBottom: 4, marginBottom: 4, borderBottom: `1px solid ${T.border}` }}>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
-                {s.label}
+                <span style={{ width: 10, height: 0, borderTop: `2px dashed ${BENCH_COLOR}` }} />
+                NIFTY 50
               </span>
-              <span className="num" style={{ color: T.text2 }}>{signed(s.points[hover].v - 100)}%</span>
+              <span className="num" style={{ color: T.text2 }}>{signed(benchmark.points[hover].v - 100)}%</span>
             </div>
-          ))}
+          )}
+          {[...series].sort((a, b) => b.points[hover].v - a.points[hover].v).map((s) => {
+            const rel = benchmark ? s.points[hover].v - benchmark.points[hover].v : null;
+            return (
+              <div key={s.symbol} style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color }} />
+                  {s.label}
+                </span>
+                <span className="num" style={{ color: T.text2 }}>
+                  {signed(s.points[hover].v - 100)}%
+                  {rel != null && <span style={{ color: T.muted }}> ({signed(rel, 1)} vs N50)</span>}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -375,25 +418,31 @@ export default function SectorDayView({ data }) {
   const [trendPeriodKey, setTrendPeriodKey] = useState("1w");
   const trendPeriod = TREND_PERIODS.find((p) => p.key === trendPeriodKey) || TREND_PERIODS[0];
 
-  // Every tile sector indexed to 100 over the chosen period (common
-  // dates taken from NIFTY so all lines share one x-axis).
-  const trendPool = useMemo(() => {
+  // Every tile sector — and NIFTY 50 as the benchmark — indexed to 100
+  // over the chosen period (common dates taken from NIFTY so all lines
+  // share one x-axis). vsBenchmark = sector's period return minus NIFTY
+  // 50's, in percentage points: > 0 outperformed, < 0 underperformed.
+  const { trendPool, benchmark } = useMemo(() => {
     const need = trendPeriod.sessions + 1; // N changes need N+1 closes
     const dates = bySymbol.NIFTY?.recent?.slice(-need).map((p) => p.t);
-    if (!dates || dates.length < need) return [];
-    return tiles
-      .map((row) => {
-        const byDate = Object.fromEntries((row.recent || []).map((p) => [p.t, p.c]));
-        const vals = dates.map((d) => byDate[d]);
-        if (vals.some((v) => v == null)) return null;
-        return {
-          symbol: row.symbol,
-          label: tileName(row.name),
-          points: dates.map((t, i) => ({ t, v: (vals[i] / vals[0]) * 100 })),
-          periodChange: (vals[vals.length - 1] / vals[0] - 1) * 100,
-        };
-      })
-      .filter(Boolean);
+    if (!dates || dates.length < need) return { trendPool: [], benchmark: null };
+    const indexed = (row, label) => {
+      const byDate = Object.fromEntries((row.recent || []).map((p) => [p.t, p.c]));
+      const vals = dates.map((d) => byDate[d]);
+      if (vals.some((v) => v == null)) return null;
+      return {
+        symbol: row.symbol,
+        label,
+        points: dates.map((t, i) => ({ t, v: (vals[i] / vals[0]) * 100 })),
+        periodChange: (vals[vals.length - 1] / vals[0] - 1) * 100,
+      };
+    };
+    const bench = indexed(bySymbol.NIFTY, "NIFTY 50");
+    const pool = tiles
+      .map((row) => indexed(row, tileName(row.name)))
+      .filter(Boolean)
+      .map((sec) => ({ ...sec, vsBenchmark: bench ? sec.periodChange - bench.periodChange : null }));
+    return { trendPool: pool, benchmark: bench };
   }, [bySymbol, tiles, trendPeriod]);
 
   const [trendMode, setTrendMode] = useState("positive");
@@ -470,7 +519,7 @@ export default function SectorDayView({ data }) {
               <span style={{ fontSize: 16, fontWeight: 700 }}>
                 Sector trend <span style={{ fontSize: 13, fontWeight: 500, color: T.text2 }}>(last {trendPeriod.sessions} sessions, indexed to 100)</span>
                 <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.muted, marginTop: 2 }}>
-                  Top {TREND_COUNT} by {trendMode} momentum over {trendPeriod.label}
+                  Top {TREND_COUNT} by {trendMode} momentum over {trendPeriod.label} · dashed line = NIFTY 50
                 </span>
               </span>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -514,16 +563,27 @@ export default function SectorDayView({ data }) {
             {trend.length ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12, alignItems: "center" }}>
                 <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-                  <TrendChart series={trend} />
+                  <TrendChart series={trend} benchmark={benchmark} />
                 </div>
-                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10, flex: "0 0 auto" }}>
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "auto auto auto", columnGap: 12, rowGap: 9, alignItems: "center", flex: "0 0 auto", fontSize: 13 }}>
+                  {benchmark && (
+                    <li style={{ display: "contents" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: T.text, fontWeight: 700 }}>
+                        <span style={{ width: 12, height: 0, borderTop: `2px dashed ${BENCH_COLOR}` }} />
+                        NIFTY 50
+                      </span>
+                      <span className="num" style={{ fontWeight: 700, color: T.text2, textAlign: "right" }}>{signed(benchmark.periodChange, 1)}%</span>
+                      <span style={{ fontSize: 11, color: T.muted }}>benchmark</span>
+                    </li>
+                  )}
                   {trend.map((s) => (
-                    <li key={s.symbol} style={{ display: "flex", alignItems: "center", fontSize: 13, justifyContent: "space-between", gap: 14, minWidth: 150 }}>
+                    <li key={s.symbol} style={{ display: "contents" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: T.text }}>
                         <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color }} />
                         {s.label}
                       </span>
-                      <span className="num" style={{ fontWeight: 700, color: T.text2 }}>{signed(s.periodChange, 1)}%</span>
+                      <span className="num" style={{ fontWeight: 700, color: T.text2, textAlign: "right" }}>{signed(s.periodChange, 1)}%</span>
+                      <RelBadge value={s.vsBenchmark} />
                     </li>
                   ))}
                 </ul>
