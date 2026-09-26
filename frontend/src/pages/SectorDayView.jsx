@@ -46,10 +46,22 @@ const EXTRA_TILES = new Set(["NIFTY ENERGY", "NIFTYINFRA"]);
 // reference palette's dark categorical slots 1-5, validated on T.card.
 const TREND_COUNT = 5;
 const TREND_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"];
-const TREND_SESSIONS = 6; // 5 day-over-day changes
+// Look-back options for the trend chart, in trading sessions (a week =
+// 5). The API sends 30 recent closes per index, enough for all three.
+const TREND_PERIODS = [
+  { key: "1w", label: "1 week", sessions: 5 },
+  { key: "2w", label: "2 weeks", sessions: 10 },
+  { key: "3w", label: "3 weeks", sessions: 15 },
+];
 
 const fmt = (n, d = 2) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }));
-const signed = (n, d = 2) => (n == null ? "—" : `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmt(Math.abs(n), d)}`);
+// Sign taken from the value as displayed, so -0.03 at 1dp shows "0.0",
+// not "−0.0".
+const signed = (n, d = 2) => {
+  if (n == null) return "—";
+  const r = Number(n.toFixed(d));
+  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${fmt(Math.abs(r), d)}`;
+};
 const chartHref = (symbol) => `/markets/chart?symbol=${encodeURIComponent(symbol)}`;
 const shortName = (name) => name.replace(/^Nifty\s+/i, "");
 // Tile labels: a few official names are too long for a tile.
@@ -229,7 +241,7 @@ function TrendChart({ series }) {
   const x = (i) => pad.l + (i / (dates.length - 1)) * (W - pad.l - pad.r);
   // A date label is ~48px wide at 11px; below ~64px apart, label every
   // other session (always keeping the latest).
-  const labelEvery = (W - pad.l - pad.r) / (dates.length - 1) < 64 ? 2 : 1;
+  const labelEvery = Math.max(1, Math.ceil(64 / ((W - pad.l - pad.r) / (dates.length - 1))));
   const y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
 
   function onMove(e) {
@@ -241,7 +253,7 @@ function TrendChart({ series }) {
 
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Sector performance over the last 5 sessions, indexed to 100" onMouseMove={onMove} onMouseLeave={() => setHover(null)} style={{ display: "block", cursor: "crosshair", maxWidth: "100%" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`Sector performance over the last ${dates.length - 1} sessions, indexed to 100`} onMouseMove={onMove} onMouseLeave={() => setHover(null)} style={{ display: "block", cursor: "crosshair", maxWidth: "100%" }}>
         {ticks.map((v) => (
           <g key={v}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} stroke={v === 100 ? "#3A4152" : T.grid} strokeWidth="1" strokeDasharray={v === 100 ? "" : "3 4"} />
@@ -358,11 +370,15 @@ export default function SectorDayView({ data }) {
     [rows],
   );
 
-  // Every tile sector indexed to 100 over the last 5 sessions (common
+  const [trendPeriodKey, setTrendPeriodKey] = useState("1w");
+  const trendPeriod = TREND_PERIODS.find((p) => p.key === trendPeriodKey) || TREND_PERIODS[0];
+
+  // Every tile sector indexed to 100 over the chosen period (common
   // dates taken from NIFTY so all lines share one x-axis).
   const trendPool = useMemo(() => {
-    const dates = bySymbol.NIFTY?.recent?.slice(-TREND_SESSIONS).map((p) => p.t);
-    if (!dates || dates.length < TREND_SESSIONS) return [];
+    const need = trendPeriod.sessions + 1; // N changes need N+1 closes
+    const dates = bySymbol.NIFTY?.recent?.slice(-need).map((p) => p.t);
+    if (!dates || dates.length < need) return [];
     return tiles
       .map((row) => {
         const byDate = Object.fromEntries((row.recent || []).map((p) => [p.t, p.c]));
@@ -372,15 +388,15 @@ export default function SectorDayView({ data }) {
           symbol: row.symbol,
           label: tileName(row.name),
           points: dates.map((t, i) => ({ t, v: (vals[i] / vals[0]) * 100 })),
-          change5d: (vals[vals.length - 1] / vals[0] - 1) * 100,
+          periodChange: (vals[vals.length - 1] / vals[0] - 1) * 100,
         };
       })
       .filter(Boolean);
-  }, [bySymbol, tiles]);
+  }, [bySymbol, tiles, trendPeriod]);
 
   const [trendMode, setTrendMode] = useState("positive");
   const trend = useMemo(() => {
-    const ranked = [...trendPool].sort((a, b) => (trendMode === "positive" ? b.change5d - a.change5d : a.change5d - b.change5d));
+    const ranked = [...trendPool].sort((a, b) => (trendMode === "positive" ? b.periodChange - a.periodChange : a.periodChange - b.periodChange));
     return ranked.slice(0, TREND_COUNT).map((s, i) => ({ ...s, color: TREND_COLORS[i] }));
   }, [trendPool, trendMode]);
 
@@ -450,11 +466,30 @@ export default function SectorDayView({ data }) {
           <div style={{ ...card, padding: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 16, fontWeight: 700 }}>
-                Sector trend <span style={{ fontSize: 13, fontWeight: 500, color: T.text2 }}>(last 5 sessions, indexed to 100)</span>
+                Sector trend <span style={{ fontSize: 13, fontWeight: 500, color: T.text2 }}>(last {trendPeriod.sessions} sessions, indexed to 100)</span>
                 <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.muted, marginTop: 2 }}>
-                  Top {TREND_COUNT} by {trendMode} momentum
+                  Top {TREND_COUNT} by {trendMode} momentum over {trendPeriod.label}
                 </span>
               </span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <span className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Trend period</span>
+                <select
+                  value={trendPeriodKey}
+                  onChange={(e) => setTrendPeriodKey(e.target.value)}
+                  style={{
+                    appearance: "none", WebkitAppearance: "none", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: T.text, cursor: "pointer",
+                    background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: "8px 30px 8px 12px", colorScheme: "dark",
+                  }}
+                >
+                  {TREND_PERIODS.map((p) => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke={T.text2} strokeWidth="1.6" aria-hidden="true" style={{ position: "absolute", right: 11, pointerEvents: "none" }}>
+                  <path d="M2 3.5L5 6.5L8 3.5" />
+                </svg>
+              </label>
               <div role="group" aria-label="Momentum direction" style={{ display: "flex", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 9, padding: 3 }}>
                 {[["positive", "▲ Positive"], ["negative", "▼ Negative"]].map(([key, label]) => (
                   <button
@@ -472,6 +507,7 @@ export default function SectorDayView({ data }) {
                   </button>
                 ))}
               </div>
+              </div>
             </div>
             {trend.length ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12, alignItems: "center" }}>
@@ -485,7 +521,7 @@ export default function SectorDayView({ data }) {
                         <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color }} />
                         {s.label}
                       </span>
-                      <span className="num" style={{ fontWeight: 700, color: T.text2 }}>{signed(s.change5d, 1)}%</span>
+                      <span className="num" style={{ fontWeight: 700, color: T.text2 }}>{signed(s.periodChange, 1)}%</span>
                     </li>
                   ))}
                 </ul>
