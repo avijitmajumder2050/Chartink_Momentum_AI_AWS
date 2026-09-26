@@ -35,6 +35,10 @@ except ImportError:  # pragma: no cover
 
 S3_KEY = "uploads/sector_indices.csv"
 LOCAL_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sector_indices.csv")
+# Which stocks make up each sector index — built from NSE's published
+# lists by upload_sector_constituents.py.
+CONSTITUENTS_S3_KEY = "uploads/sector_constituents.csv"
+CONSTITUENTS_LOCAL_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sector_constituents.csv")
 
 EMA_PERIOD = 200
 NEAR_EMA_PCT = 1.0
@@ -228,3 +232,127 @@ def get_sector_overview():
         "rule": {"emaPeriod": EMA_PERIOD, "nearEmaPct": NEAR_EMA_PCT, "rsiPeriod": RSI_PERIOD, "rsiMax": RSI_MAX},
         "updatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+
+
+# ---------------------------------------------------------------------
+# Sector stocks: today's move for every constituent of a sector index,
+# for the Day view's "leading / weakest sector stocks" card.
+# ---------------------------------------------------------------------
+STOCK_HISTORY_DAYS = 20
+STOCK_HISTORY_CACHE_TTL_SECONDS = 12 * 60 * 60
+STOCK_MOVES_CACHE_TTL_SECONDS = 60
+# Gentler than the index fetch: a sector can have 40 members (Energy), and
+# a burst of stock-history calls did trip Dhan's rate limit (DH-904,
+# confirmed 2026-09-26). Histories are cached 12h, so this only paces the
+# first load of the day.
+STOCK_HISTORY_WORKERS = 2
+STOCK_HISTORY_RETRIES = 4
+CONSTITUENTS_CACHE_TTL_SECONDS = 12 * 60 * 60
+
+
+def _fetch_constituents():
+    try:
+        df = chart_connector.read_csv(CONSTITUENTS_S3_KEY)
+    except Exception:
+        df = pd.read_csv(CONSTITUENTS_LOCAL_CSV)
+    out = {}
+    for r in df.to_dict(orient="records"):
+        out.setdefault(str(r["index_symbol"]).strip(), []).append({
+            "symbol": str(r["stock_symbol"]).strip().upper(),
+            "name": str(r["company_name"]).strip(),
+            "industry": str(r.get("industry") or "").strip(),
+        })
+    return out
+
+
+def get_constituents():
+    return cache.get_or_fetch("sector_constituents", CONSTITUENTS_CACHE_TTL_SECONDS, _fetch_constituents)
+
+
+def _fetch_stock_history(security_id):
+    to_date = datetime.datetime.now(chart_connector.IST).date()
+    from_date = to_date - datetime.timedelta(days=STOCK_HISTORY_DAYS)
+    last_error = None
+    for attempt in range(STOCK_HISTORY_RETRIES):
+        try:
+            resp = chart_connector._dhan().historical_daily_data(
+                security_id=str(security_id), exchange_segment=dhanhq.NSE, instrument_type="EQUITY",
+                from_date=from_date.isoformat(), to_date=to_date.isoformat(),
+            )
+            if resp.get("status") != "success":
+                raise RuntimeError(resp.get("remarks") or "historical_daily_data failed")
+            data = resp["data"]
+            dates = pd.to_datetime(data["timestamp"], unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%Y-%m-%d")
+            return [{"time": d, "close": float(c)} for d, c in zip(dates, data["close"]) if float(c) > 0]
+        except Exception as exc:
+            last_error = exc
+            time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError(f"history for stock {security_id} failed: {last_error}")
+
+
+def _get_stock_history(security_id):
+    return cache.get_or_fetch(f"sector_stock_history_{security_id}", STOCK_HISTORY_CACHE_TTL_SECONDS, lambda: _fetch_stock_history(security_id))
+
+
+def _session_date(quote):
+    """IST trading date of a quote's last trade ("25/09/2026 15:59:55")."""
+    try:
+        return datetime.datetime.strptime(str(quote.get("last_trade_time")), "%d/%m/%Y %H:%M:%S").strftime("%Y-%m-%d")
+    except (TypeError, ValueError):
+        return None
+
+
+def stock_day_move(quote, bars):
+    """(last price, % change vs the previous session's close) for one
+    stock. Dhan's quote can't be trusted for the previous close on its
+    own: once the market shuts it reports net_change 0 and rolls
+    ohlc.close over to TODAY's close (confirmed live, HDFCBANK on
+    2026-09-26), which would show every stock as flat all evening and
+    weekend. So the previous close comes from daily history instead:
+    the last bar dated before the quote's own trading session."""
+    last = quote.get("last_price") if quote else None
+    session = _session_date(quote) if quote else None
+    if last and session:
+        prior = [b for b in bars if b["time"] < session]
+        if prior:
+            prev = prior[-1]["close"]
+            return float(last), (float(last) - prev) / prev * 100
+    if len(bars) >= 2:  # no usable quote — last two daily closes
+        return bars[-1]["close"], (bars[-1]["close"] - bars[-2]["close"]) / bars[-2]["close"] * 100
+    return None, None
+
+
+def _fetch_sector_stock_moves(index_symbol):
+    from connectors import dhan_connector  # local import: dhan_connector pulls in the scrip master
+
+    members = get_constituents().get(index_symbol) or []
+    if not members:
+        return []
+    resolved, _unresolved = dhan_connector.resolve_security_ids([m["symbol"] for m in members])
+    ids = {m["symbol"]: resolved[m["symbol"]] for m in members if m["symbol"] in resolved}
+    try:
+        quotes = chart_connector._get_quotes([int(v) for v in ids.values()], "NSE_EQ", max_retries=2) or {}
+    except Exception:
+        quotes = {}
+    with ThreadPoolExecutor(max_workers=STOCK_HISTORY_WORKERS) as pool:
+        histories = {sym: pool.submit(_get_stock_history, sid) for sym, sid in ids.items()}
+    rows = []
+    for m in members:
+        sid = ids.get(m["symbol"])
+        if sid is None:
+            continue
+        try:
+            bars = histories[m["symbol"]].result()
+        except Exception:
+            bars = []
+        price, change = stock_day_move(quotes.get(str(sid)), bars)
+        if change is None:
+            continue
+        rows.append({**m, "price": price, "changePct": change})
+    rows.sort(key=lambda r: r["changePct"], reverse=True)
+    return rows
+
+
+def get_sector_stock_moves(index_symbol):
+    """Every constituent of `index_symbol` with today's % move, best first."""
+    return cache.get_or_fetch(f"sector_stock_moves_{index_symbol.replace(' ', '_')}", STOCK_MOVES_CACHE_TTL_SECONDS, lambda: _fetch_sector_stock_moves(index_symbol))

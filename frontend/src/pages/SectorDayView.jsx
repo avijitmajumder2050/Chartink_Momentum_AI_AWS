@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiFetch } from "../api/client";
 
 // Sector Overview's "Day view" tab — a dark market-overview dashboard
 // (layout per sector_overview.png): index cards with 30-session
@@ -340,6 +341,82 @@ function TrendChart({ series, benchmark }) {
   );
 }
 
+// ---- stocks inside the strongest / weakest sector today ----
+const SECTOR_STOCKS_SHOWN = 5;
+
+function SectorStockList({ tone, sector, stocks }) {
+  const up = tone === "up";
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: up ? T.up : T.down }}>
+          {up ? "▲ Strongest sector" : "▼ Weakest sector"}
+        </span>
+        <Link to={chartHref(sector.symbol)} style={{ fontSize: 13, fontWeight: 700, color: T.text, textDecoration: "none" }}>
+          {tileName(sector.name)} <span className="num" style={{ color: T.text2 }}>{signed(sector.changePct)}%</span>
+        </Link>
+      </div>
+      {stocks == null ? (
+        <p style={{ fontSize: 12.5, color: T.muted, margin: "10px 0" }}>Loading stocks…</p>
+      ) : !stocks.length ? (
+        <p style={{ fontSize: 12.5, color: T.muted, margin: "10px 0" }}>No stock data right now.</p>
+      ) : (
+        stocks.map((st, i) => (
+          <Link key={st.symbol} to={chartHref(st.symbol)} className="dv-row" title={`${st.name} — open chart`} style={{ display: "grid", gridTemplateColumns: "18px minmax(0, 1fr) auto auto", alignItems: "center", gap: 10, padding: "8px 0", borderTop: `1px solid ${T.grid}`, textDecoration: "none" }}>
+            <span style={{ fontSize: 12, color: T.muted }}>{i + 1}.</span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ fontSize: 13, color: T.text, fontWeight: 600, display: "block" }}>{st.symbol}</span>
+              <span style={{ fontSize: 11, color: T.muted, display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.name}</span>
+            </span>
+            <span className="num" style={{ fontSize: 12.5, color: T.text2 }}>₹{fmt(st.price)}</span>
+            <span className="num" style={{ fontSize: 13, fontWeight: 700, color: st.changePct >= 0 ? T.up : T.down, minWidth: 58, textAlign: "right" }}>{signed(st.changePct)}%</span>
+          </Link>
+        ))
+      )}
+    </div>
+  );
+}
+
+function SectorStocksCard({ best, worst, refreshKey }) {
+  // Fetched separately from the main payload: a sector nobody has opened
+  // today needs one daily-history call per member stock (server-cached
+  // 12h), so it can take ~5-15s the first time — the page shouldn't wait.
+  const [result, setResult] = useState({ key: null, sectors: null });
+  const key = [best?.symbol, worst?.symbol].filter(Boolean).join(",");
+
+  useEffect(() => {
+    if (!key) return undefined;
+    let cancelled = false;
+    apiFetch(`/api/markets/sector-stocks?symbols=${encodeURIComponent(key)}`)
+      .then((res) => (res.ok ? res.json() : { sectors: {} }))
+      .then((d) => !cancelled && setResult({ key, sectors: d.sectors || {} }))
+      .catch(() => !cancelled && setResult({ key, sectors: {} }));
+    return () => {
+      cancelled = true;
+    };
+  }, [key, refreshKey]);
+
+  if (!best) return null;
+  // Show the previous result while a refresh for the SAME sectors is in
+  // flight; a different sector pair shows "Loading" instead of stale rows.
+  const sectors = result.key === key ? result.sectors : null;
+  const bestStocks = sectors ? (sectors[best.symbol] || []).slice(0, SECTOR_STOCKS_SHOWN) : null;
+  const worstStocks = sectors && worst ? [...(sectors[worst.symbol] || [])].reverse().slice(0, SECTOR_STOCKS_SHOWN) : null;
+
+  return (
+    <div style={{ ...card, padding: 18 }}>
+      <span style={{ fontSize: 16, fontWeight: 700 }}>Sector stocks</span>
+      <p style={{ fontSize: 12, color: T.muted, margin: "2px 0 12px" }}>
+        Top {SECTOR_STOCKS_SHOWN} stocks in today's strongest sector, and the weakest {SECTOR_STOCKS_SHOWN} in the weakest — by today's move, from each index's NSE member list.
+      </p>
+      <div className="dv-stocks">
+        <SectorStockList tone="up" sector={best} stocks={bestStocks} />
+        {worst && <SectorStockList tone="down" sector={worst} stocks={worstStocks} />}
+      </div>
+    </div>
+  );
+}
+
 function MoversCard({ title, rows, up }) {
   return (
     <div style={{ ...card, padding: "16px 18px", flex: "1 1 220px", minWidth: 0 }}>
@@ -467,6 +544,8 @@ export default function SectorDayView({ data }) {
         @media (max-width: 520px) { .dv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px } .dv-tile { padding: 11px 10px 10px !important } .dv-tile-icon, .dv-tile-chev { display: none !important } }
         .dv-main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start }
         @media (max-width: 960px) { .dv-main { grid-template-columns: minmax(0, 1fr) } }
+        .dv-stocks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px }
+        @media (max-width: 640px) { .dv-stocks { grid-template-columns: minmax(0, 1fr) } }
       `}</style>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 10 }}>
@@ -489,6 +568,7 @@ export default function SectorDayView({ data }) {
       </div>
 
       <div className="dv-main">
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         <div style={{ ...card, padding: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
             <span style={{ fontSize: 16, fontWeight: 700 }}>Sector performance</span>
@@ -511,6 +591,8 @@ export default function SectorDayView({ data }) {
               <SectorTile key={r.securityId} row={r} mode={mode} />
             ))}
           </div>
+        </div>
+        <SectorStocksCard best={tiles[0]} worst={tiles.length > 1 ? tiles[tiles.length - 1] : null} refreshKey={data?.updatedAt} />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>

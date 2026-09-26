@@ -611,6 +611,28 @@ def api_markets_sectors():
 
 
 SECTOR_DAY_VIEW_MOVERS_LIMIT = 5
+SECTOR_STOCKS_MAX_SECTORS = 4
+
+
+@app.get("/api/markets/sector-stocks")
+@subscription_required
+def api_markets_sector_stocks():
+    """Today's move for every constituent of up to SECTOR_STOCKS_MAX_SECTORS
+    sector indices (?symbols=NIFTY REALTY,NIFTY HEALTHCARE) — the Day
+    view's leading/weakest sector stocks card. Separate from
+    /api/markets/sectors so the page never waits on it: a cold sector
+    means one daily-history call per constituent (cached 12h)."""
+    known = sector_connector.get_constituents()
+    requested = [s.strip() for s in (request.args.get("symbols") or "").split(",") if s.strip()]
+    symbols = [s for s in dict.fromkeys(requested) if s in known][:SECTOR_STOCKS_MAX_SECTORS]
+    out = {}
+    for symbol in symbols:
+        try:
+            out[symbol] = sector_connector.get_sector_stock_moves(symbol)
+        except Exception:
+            app.logger.exception("sector stock moves failed for %s", symbol)
+            out[symbol] = []
+    return jsonify({"sectors": out})
 
 
 @app.get("/api/research")

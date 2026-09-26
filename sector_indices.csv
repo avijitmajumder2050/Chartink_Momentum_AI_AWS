@@ -1,41 +1,41 @@
-security_id,symbol,display_name,category,investable,track,sort_order
-13,NIFTY,Nifty 50,Broad market,true,true,1
-51,SENSEX,Sensex,Broad market,true,true,2
-19,NIFTY 500,Nifty 500,Broad market,true,true,3
-467,NIFTY500 MULTICAP,Nifty 500 Multicap 50:25:25,Broad market,true,true,4
-1,NIFTY MIDCAP 150,Nifty Midcap 150,Broad market,true,true,5
-7,NIFTY MIDSMALLCAP 400,Nifty MidSmallcap 400,Broad market,true,true,6
-3,NIFTY SMALLCAP 250,Nifty Smallcap 250,Broad market,true,true,7
-444,NIFTY MICROCAP250,Nifty Microcap 250,Broad market,true,true,8
-25,BANKNIFTY,Nifty Bank,Sector,true,true,10
-15,NIFTY PVT BANK,Nifty Private Bank,Sector,true,true,11
-33,NIFTY PSU BANK,Nifty PSU Bank,Sector,true,true,12
-27,FINNIFTY,Nifty Financial Services,Sector,true,true,13
-29,NIFTYIT,Nifty IT,Sector,true,true,14
-14,NIFTY AUTO,Nifty Auto,Sector,true,true,15
-28,NIFTY FMCG,Nifty FMCG,Sector,true,true,16
-32,NIFTY PHARMA,Nifty Pharma,Sector,true,true,17
-447,NIFTY HEALTHCARE,Nifty Healthcare,Sector,true,true,18
-31,NIFTY METAL,Nifty Metal,Sector,true,true,19
-34,NIFTY REALTY,Nifty Realty,Sector,true,true,20
-30,NIFTY MEDIA,Nifty Media,Sector,true,true,21
-466,NIFTY CONSR DURBL,Nifty Consumer Durables,Sector,true,true,22
-470,NIFTY OIL AND GAS,Nifty Oil & Gas,Sector,true,true,23
-42,NIFTY ENERGY,Nifty Energy,Thematic,true,true,30
-43,NIFTYINFRA,Nifty Infrastructure,Thematic,true,true,31
-39,NIFTY COMMODITIES,Nifty Commodities,Thematic,true,true,32
-40,NIFTY CONSUMPTION,Nifty India Consumption,Thematic,true,true,33
-46,NIFTY SERV SECTOR,Nifty Services Sector,Thematic,true,true,34
-41,NIFTYPSE,Nifty PSE,Thematic,true,true,35
-45,NIFTYCPSE,Nifty CPSE,Thematic,true,true,36
-44,NIFTY MNC,Nifty MNC,Thematic,true,true,37
-473,NIFTY IND DIGITAL,Nifty India Digital,Thematic,true,true,38
-474,NIFTY INDIA MFG,Nifty India Manufacturing,Thematic,true,true,39
-493,NIFTY IND DEFENCE,Nifty India Defence,Thematic,true,true,40
-491,NIFTY EV,Nifty EV & New Age Automotive,Thematic,true,true,41
-480,NIFTY200MOMENTM30,Nifty 200 Momentum 30,Strategy,true,true,50
-498,NIFTY500MOMENTM50,Nifty 500 Momentum 50,Strategy,true,true,51
-483,NIFTYM150MOMNTM50,Nifty Midcap150 Momentum 50,Strategy,true,true,52
-482,NIFTY ALPHALOWVOL,Nifty Alpha Low-Volatility 30,Strategy,true,true,53
-21,INDIA VIX,India VIX,Volatility,false,true,90
-5024,GIFTNIFTY,Gift Nifty,Derivative,false,false,99
+security_id,symbol,display_name,category,investable,track,sort_order,nse_constituents_file
+13,NIFTY,Nifty 50,Broad market,True,True,1,
+51,SENSEX,Sensex,Broad market,True,True,2,
+19,NIFTY 500,Nifty 500,Broad market,True,True,3,
+467,NIFTY500 MULTICAP,Nifty 500 Multicap 50:25:25,Broad market,True,True,4,
+1,NIFTY MIDCAP 150,Nifty Midcap 150,Broad market,True,True,5,
+7,NIFTY MIDSMALLCAP 400,Nifty MidSmallcap 400,Broad market,True,True,6,
+3,NIFTY SMALLCAP 250,Nifty Smallcap 250,Broad market,True,True,7,
+444,NIFTY MICROCAP250,Nifty Microcap 250,Broad market,True,True,8,
+25,BANKNIFTY,Nifty Bank,Sector,True,True,10,ind_niftybanklist.csv
+15,NIFTY PVT BANK,Nifty Private Bank,Sector,True,True,11,ind_nifty_privatebanklist.csv
+33,NIFTY PSU BANK,Nifty PSU Bank,Sector,True,True,12,ind_niftypsubanklist.csv
+27,FINNIFTY,Nifty Financial Services,Sector,True,True,13,ind_niftyfinancelist.csv
+29,NIFTYIT,Nifty IT,Sector,True,True,14,ind_niftyitlist.csv
+14,NIFTY AUTO,Nifty Auto,Sector,True,True,15,ind_niftyautolist.csv
+28,NIFTY FMCG,Nifty FMCG,Sector,True,True,16,ind_niftyfmcglist.csv
+32,NIFTY PHARMA,Nifty Pharma,Sector,True,True,17,ind_niftypharmalist.csv
+447,NIFTY HEALTHCARE,Nifty Healthcare,Sector,True,True,18,ind_niftyhealthcarelist.csv
+31,NIFTY METAL,Nifty Metal,Sector,True,True,19,ind_niftymetallist.csv
+34,NIFTY REALTY,Nifty Realty,Sector,True,True,20,ind_niftyrealtylist.csv
+30,NIFTY MEDIA,Nifty Media,Sector,True,True,21,ind_niftymedialist.csv
+466,NIFTY CONSR DURBL,Nifty Consumer Durables,Sector,True,True,22,ind_niftyconsumerdurableslist.csv
+470,NIFTY OIL AND GAS,Nifty Oil & Gas,Sector,True,True,23,ind_niftyoilgaslist.csv
+42,NIFTY ENERGY,Nifty Energy,Thematic,True,True,30,ind_niftyenergylist.csv
+43,NIFTYINFRA,Nifty Infrastructure,Thematic,True,True,31,ind_niftyinfralist.csv
+39,NIFTY COMMODITIES,Nifty Commodities,Thematic,True,True,32,
+40,NIFTY CONSUMPTION,Nifty India Consumption,Thematic,True,True,33,
+46,NIFTY SERV SECTOR,Nifty Services Sector,Thematic,True,True,34,
+41,NIFTYPSE,Nifty PSE,Thematic,True,True,35,
+45,NIFTYCPSE,Nifty CPSE,Thematic,True,True,36,
+44,NIFTY MNC,Nifty MNC,Thematic,True,True,37,
+473,NIFTY IND DIGITAL,Nifty India Digital,Thematic,True,True,38,
+474,NIFTY INDIA MFG,Nifty India Manufacturing,Thematic,True,True,39,
+493,NIFTY IND DEFENCE,Nifty India Defence,Thematic,True,True,40,
+491,NIFTY EV,Nifty EV & New Age Automotive,Thematic,True,True,41,
+480,NIFTY200MOMENTM30,Nifty 200 Momentum 30,Strategy,True,True,50,
+498,NIFTY500MOMENTM50,Nifty 500 Momentum 50,Strategy,True,True,51,
+483,NIFTYM150MOMNTM50,Nifty Midcap150 Momentum 50,Strategy,True,True,52,
+482,NIFTY ALPHALOWVOL,Nifty Alpha Low-Volatility 30,Strategy,True,True,53,
+21,INDIA VIX,India VIX,Volatility,False,True,90,
+5024,GIFTNIFTY,Gift Nifty,Derivative,False,False,99,
