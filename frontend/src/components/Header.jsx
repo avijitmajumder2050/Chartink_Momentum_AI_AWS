@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import NotificationBell from "./NotificationBell";
 
-const MARKETS_PATHS = ["/markets/ipo-hub", "/markets/research", "/scanner", "/markets/chart", "/markets/chart-wall"];
+const MARKETS_PATHS = ["/markets/ipo-hub", "/markets/research", "/markets/sectors", "/scanner", "/markets/chart", "/markets/chart-wall"];
 
 function UserMenu({ user, logout }) {
   const [open, setOpen] = useState(false);
@@ -153,6 +153,7 @@ export default function Header() {
                   <div className="site-nav-dropdown-menu-inner">
                     <Link to="/markets/ipo-hub" onClick={() => setDropdownOpen(false)}>IPO Hub</Link>
                     <Link to="/markets/research" onClick={() => setDropdownOpen(false)}>Stock Research</Link>
+                    <Link to="/markets/sectors" onClick={() => setDropdownOpen(false)}>Sector Overview</Link>
                     <Link to="/scanner" onClick={() => setDropdownOpen(false)}>Scanner</Link>
                     <Link to="/markets/chart" onClick={() => setDropdownOpen(false)}>Chart</Link>
                     <Link to="/markets/chart-wall" onClick={() => setDropdownOpen(false)}>Chart Wall</Link>

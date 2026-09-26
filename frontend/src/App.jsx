@@ -7,6 +7,7 @@ import Chart from "./pages/Chart";
 import News from "./pages/News";
 import IpoHub from "./pages/IpoHub";
 import Research from "./pages/Research";
+import SectorOverview from "./pages/SectorOverview";
 import Subscription from "./pages/Subscription";
 import Dashboard from "./pages/Dashboard";
 import ChartWall from "./pages/ChartWall";
@@ -57,6 +58,14 @@ export default function App() {
           element={
             <RequireSubscription>
               <IpoHub />
+            </RequireSubscription>
+          }
+        />
+        <Route
+          path="/markets/sectors"
+          element={
+            <RequireSubscription>
+              <SectorOverview />
             </RequireSubscription>
           }
         />

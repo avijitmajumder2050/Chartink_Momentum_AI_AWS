@@ -28,7 +28,7 @@ import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import mock_data
-from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, order_intent_connector, razorpay_connector, secrets, stock_screener_ai, subscription_connector
+from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, order_intent_connector, razorpay_connector, secrets, sector_connector, stock_screener_ai, subscription_connector
 from connectors.format_utils import pct_str
 
 app = Flask(__name__)
@@ -583,6 +583,20 @@ def api_watchlist():
         app.logger.exception("chart wall stock list fetch failed")
         return jsonify({"watchlist": [], "unavailable": True})
     return jsonify({"watchlist": stocks, "unavailable": False})
+
+
+@app.get("/api/markets/sectors")
+@subscription_required
+def api_markets_sectors():
+    """Sector Overview page: every index in S3's uploads/sector_indices.csv
+    with its 200 EMA, RSI(14) and the investment-eligible screen (see
+    connectors/sector_connector.py). Histories are cached for 6h and the
+    live quote for 60s, so only a cold start is slow (~10-25s)."""
+    try:
+        return jsonify(sector_connector.get_sector_overview())
+    except Exception:
+        app.logger.exception("sector overview failed")
+        return jsonify({"indices": [], "failed": [], "unavailable": True})
 
 
 @app.get("/api/research")
