@@ -46,14 +46,22 @@ HISTORICAL_CACHE_TTL_SECONDS = 6 * 60 * 60
 FIRST_MINUTE_CACHE_TTL_SECONDS = 20 * 60
 
 _client = None
+_client_token = None
 
 
 def _get_client():
-    global _client
-    if _client is None:
+    """Rebuilt whenever /dhan/access_token changes (secrets caches it for
+    15 min, so this is cheap). It used to be built once per process: a
+    backend left running overnight (on-demand evening start, 2026-09-28
+    20:52) kept Monday's token after dhan_token_refresh rotated it at
+    08:34 the next morning, so every Dhan call failed and the 09:25-10:30
+    auto breakout scan found nothing all day (2026-09-29)."""
+    global _client, _client_token
+    access_token = secrets.get_parameter("/dhan/access_token")
+    if _client is None or access_token != _client_token:
         client_id = secrets.get_parameter("/dhan/client_id")
-        access_token = secrets.get_parameter("/dhan/access_token")
         _client = dhanhq(DhanContext(client_id, access_token))
+        _client_token = access_token
     return _client
 
 

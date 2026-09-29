@@ -117,15 +117,21 @@ DHAN_HTTP_TIMEOUT_SECONDS = 8  # dhanhq's own default is 60s per request; with
 # fail fast and retry, not hang the whole watchlist/dashboard behind it.
 
 
+_dhan_client_token = None
+
+
 def _dhan():
-    global _dhan_client
+    # Rebuilt when the token rotates — see dhan_connector._get_client for
+    # the overnight-process failure (2026-09-29) this prevents.
+    global _dhan_client, _dhan_client_token
     if dhanhq is None:
         raise RuntimeError("dhanhq is not installed")
-    if _dhan_client is None:
+    access_token = secrets.get_parameter("/dhan/access_token")
+    if _dhan_client is None or access_token != _dhan_client_token:
         client_id = secrets.get_parameter("/dhan/client_id")
-        access_token = secrets.get_parameter("/dhan/access_token")
         _dhan_client = dhanhq(DhanContext(client_id, access_token))
         _dhan_client.dhan_http.timeout = DHAN_HTTP_TIMEOUT_SECONDS
+        _dhan_client_token = access_token
     return _dhan_client
 
 
