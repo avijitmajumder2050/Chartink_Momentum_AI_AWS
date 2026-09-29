@@ -7,12 +7,13 @@
 #   s3://new-dhan-trading-data/trading-bot/logs/quantile-backend.log
 #
 # - Uploaded every 5 minutes (systemd timer) and when the service stops.
-# - Holds only the current IST date: on the first run of a new day the
-#   local /var/log/quantile-backend.log is moved to .prev and truncated
-#   in place (the service writes with O_APPEND, so it just continues at
-#   the new end). That runs as ExecStartPre too, so a 09:00 start —
-#   the instance is normally off at midnight — begins the day's file
-#   before the app writes its first line.
+# - Holds only the current IST date, nothing older anywhere: on the
+#   first run of a new day the local /var/log/quantile-backend.log is
+#   emptied in place (no previous-day copy is kept — smallest possible
+#   file; the service writes with O_APPEND, so it just continues at the
+#   new end). That runs as ExecStartPre too, so a 09:00 start — the
+#   instance is normally off at midnight — begins the day's file before
+#   the app writes its first line.
 #
 # Idempotent; run as root. Called from ec2-userdata.sh, and can be
 # re-run by hand on an existing instance:
@@ -30,8 +31,9 @@ MARK=/var/log/quantile-backend.log.date
 TODAY=\$(TZ=Asia/Kolkata date +%F)
 touch "\$LOG"
 if [ "\$(cat "\$MARK" 2>/dev/null)" != "\$TODAY" ]; then
-  # New day: keep yesterday locally, start today's file empty.
-  if [ -s "\$LOG" ]; then cp "\$LOG" "\$LOG.prev"; : > "\$LOG"; fi
+  # New day: start today's file empty — no previous-day copy kept.
+  : > "\$LOG"
+  rm -f "\$LOG.prev"
   echo "\$TODAY" > "\$MARK"
 fi
 aws s3 cp "\$LOG" "$S3_DEST" --only-show-errors --content-type "text/plain; charset=utf-8" \\
