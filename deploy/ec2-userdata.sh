@@ -115,6 +115,12 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl enable quantile-backend
+
+# Today's log -> s3://new-dhan-trading-data/trading-bot/logs/quantile-backend.log
+# (every 5 min + on stop, fresh file each IST day). Installed before the
+# first start so its ExecStartPre day-rollover hook is in place.
+sudo bash "$APP_HOME/$REPO_NAME/deploy/install-log-upload.sh"
+
 sudo systemctl restart quantile-backend
 
 echo "✅ Quantile backend started; logs at /var/log/quantile-backend.log"
