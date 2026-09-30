@@ -193,13 +193,53 @@ def _refresh_fund(f, navs):
     f.update(nav=nav, navDate=nav_date.isoformat(), dataDate=_fmt_date(nav_date), return1y=r1, cagr3y=r3, cagr5y=r5)
 
 
+ETF_CALL_GAP_SECONDS = 1.5  # Dhan's data API rejects bursts (DH-904)
+ETF_RATE_LIMIT_RETRIES = 3
+
+
 def _refresh_etf(e, navs):
     code = str(e.get("amfiCode") or "")
     if code in navs:
         e["nav"] = navs[code][0]
-    last, px_date, m1, y1 = _etf_prices(e["symbol"])
+    for attempt in range(ETF_RATE_LIMIT_RETRIES + 1):
+        try:
+            last, px_date, m1, y1 = _etf_prices(e["symbol"])
+            break
+        except Exception as exc:
+            if "DH-904" not in str(exc) or attempt == ETF_RATE_LIMIT_RETRIES:
+                raise
+            time.sleep(5 * (attempt + 1))
     e.update(lastPrice=last, priceDate=px_date.isoformat(), change1m=m1, change1y=y1)
     return px_date
+
+
+def _refresh_etfs(etfs, navs, failures):
+    """Sequential, paced. Returns (price dates, failed symbols)."""
+    px_dates, failed = [], []
+    for i, e in enumerate(etfs):
+        if i:
+            time.sleep(ETF_CALL_GAP_SECONDS)
+        try:
+            px_dates.append(_refresh_etf(e, navs))
+        except Exception as exc:
+            failed.append(e["symbol"])
+            failures.append(f"ETF {e['symbol']}: {exc}")
+    return px_dates, failed
+
+
+def _as_of(data, funds, etfs):
+    nav_date = max(datetime.date.fromisoformat(f["navDate"]) for f in funds if f.get("navDate"))
+    px = [datetime.date.fromisoformat(e["priceDate"]) for e in etfs if e.get("priceDate")]
+    px_part = f" · ETF prices NSE close {_fmt_date(max(px))}" if px else ""
+    data["asOf"] = f"NAV & returns as of {_fmt_date(nav_date)} (AMFI){px_part} · AUM & expense ratio as last updated"
+
+
+def _write(data):
+    body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    client = chart_connector._s3()
+    bucket = chart_connector._get_bucket(client)
+    client.put_object(Bucket=bucket, Key=S3_KEY, Body=body, ContentType="application/json; charset=utf-8")
+    cache.get_or_fetch(CACHE_KEY, CACHE_TTL_SECONDS, _load, force=True)
 
 
 def refresh(force=False):
@@ -207,11 +247,21 @@ def refresh(force=False):
     dict; skips (unless force) if already refreshed today (IST)."""
     today = datetime.datetime.now(IST).date()
     data = _load()
+    funds = data["indexFunds"] + data["equityFunds"]
+    etfs = [e for lst in data["etfs"].values() for e in lst]
     if data.get("refreshedOn") == today.isoformat() and not force:
-        return {"skipped": True, "refreshedOn": data["refreshedOn"]}
+        pending = set(data.get("etfPending") or [])
+        if not pending:
+            return {"skipped": True, "refreshedOn": data["refreshedOn"]}
+        # Funds are done for today; retry only the ETFs that failed earlier.
+        failures = []
+        _, failed = _refresh_etfs([e for e in etfs if e["symbol"] in pending], _amfi_navs(), failures)
+        data["etfPending"] = failed
+        _as_of(data, funds, etfs)
+        _write(data)
+        return {"refreshedOn": data["refreshedOn"], "etfRetry": f"{len(pending) - len(failed)}/{len(pending)}", "failures": failures}
 
     navs = _amfi_navs()
-    funds = data["indexFunds"] + data["equityFunds"]
     failures = []
     with ThreadPoolExecutor(max_workers=HISTORY_WORKERS) as pool:
         results = {f["id"]: pool.submit(_refresh_fund, f, navs) for f in funds}
@@ -222,21 +272,13 @@ def refresh(force=False):
             failures.append(f"{fid}: {exc}")
     ok_funds = len(funds) - len(failures)
 
-    etfs = [e for lst in data["etfs"].values() for e in lst]
-    px_dates, etf_fail = [], 0
-    for e in etfs:  # sequential — Dhan's data API is rate limited
-        try:
-            px_dates.append(_refresh_etf(e, navs))
-        except Exception as exc:
-            etf_fail += 1
-            failures.append(f"ETF {e['symbol']}: {exc}")
+    _, etf_failed = _refresh_etfs(etfs, navs, failures)
 
     if ok_funds < MIN_SUCCESS_SHARE * len(funds):
         raise RuntimeError(f"only {ok_funds}/{len(funds)} funds refreshed — not written. First failures: {failures[:5]}")
 
-    nav_date = max(datetime.date.fromisoformat(f["navDate"]) for f in funds if f.get("navDate"))
-    px_part = f" · ETF prices NSE close {_fmt_date(max(px_dates))}" if px_dates else ""
-    data["asOf"] = f"NAV & returns as of {_fmt_date(nav_date)} (AMFI){px_part} · AUM & expense ratio as last updated"
+    _as_of(data, funds, etfs)
+    data["etfPending"] = etf_failed  # retried on the next hourly check
     data["refreshedOn"] = today.isoformat()
     data["refreshedAt"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     data["refreshSources"] = [
@@ -246,12 +288,8 @@ def refresh(force=False):
     ]
     data.pop("source", None)
 
-    body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-    client = chart_connector._s3()
-    bucket = chart_connector._get_bucket(client)
-    client.put_object(Bucket=bucket, Key=S3_KEY, Body=body, ContentType="application/json; charset=utf-8")
-    cache.get_or_fetch(CACHE_KEY, CACHE_TTL_SECONDS, _load, force=True)
-    return {"refreshedOn": data["refreshedOn"], "funds": f"{ok_funds}/{len(funds)}", "etfs": f"{len(etfs) - etf_fail}/{len(etfs)}", "failures": failures}
+    _write(data)
+    return {"refreshedOn": data["refreshedOn"], "funds": f"{ok_funds}/{len(funds)}", "etfs": f"{len(etfs) - len(etf_failed)}/{len(etfs)}", "failures": failures}
 
 
 # ---------------------------------------------------------------------
@@ -270,8 +308,8 @@ def _refresh_loop(log):
                 log(f"[mutual-funds] refreshed: {result}")
         except Exception as exc:
             log(f"[mutual-funds] daily refresh failed (keeping previous data): {exc}")
-        # Hourly check: runs once per IST day (refreshedOn), and also
-        # covers a backend left running past midnight.
+        # Hourly check: runs once per IST day (refreshedOn), retries any
+        # ETFs that failed, and covers a backend left running past midnight.
         time.sleep(REFRESH_CHECK_SECONDS)
 
 
