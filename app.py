@@ -28,7 +28,7 @@ import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import mock_data
-from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, news_connector, order_intent_connector, razorpay_connector, secrets, sector_connector, stock_screener_ai, subscription_connector
+from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, mutual_funds_connector, news_connector, order_intent_connector, razorpay_connector, secrets, sector_connector, stock_screener_ai, subscription_connector
 from connectors.format_utils import pct_str
 
 app = Flask(__name__)
@@ -588,6 +588,18 @@ def api_watchlist():
         app.logger.exception("chart wall stock list fetch failed")
         return jsonify({"watchlist": [], "unavailable": True})
     return jsonify({"watchlist": stocks, "unavailable": False})
+
+
+@app.get("/api/markets/mutual-funds")
+@subscription_required
+def api_markets_mutual_funds():
+    """Mutual Funds page: the fund/ETF snapshot from S3's
+    uploads/mutual_funds.json (connectors/mutual_funds_connector.py)."""
+    try:
+        return jsonify(mutual_funds_connector.get_mutual_funds())
+    except Exception:
+        app.logger.exception("mutual funds data failed")
+        return jsonify({"unavailable": True})
 
 
 @app.get("/api/markets/sectors")
