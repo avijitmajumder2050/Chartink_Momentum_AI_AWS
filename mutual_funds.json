@@ -3,6 +3,74 @@
   "asOf": "NAV & returns as of 29 Sep 2026 (AMFI) · ETF prices NSE close 30 Sep 2026 · AUM & expense ratio checked weekly",
   "indexFunds": [
     {
+      "id": "mf-150738",
+      "kind": "Index Fund",
+      "name": "Tata Nifty Midcap 150 Momentum 50 Index Fund",
+      "amc": "Tata",
+      "category": "Index Fund",
+      "index": "Nifty Midcap 150 Momentum 50",
+      "capBadges": [
+        "Mid Cap",
+        "Momentum"
+      ],
+      "aumCr": 1274.02,
+      "aumDate": "30 Sep 2026",
+      "expenseRatio": 0.82,
+      "return1y": 3.46,
+      "cagr3y": 12.47,
+      "cagr5y": null,
+      "risk": "Very High",
+      "launch": "20 Oct 2022",
+      "nav": 17.9327,
+      "navDate": "2026-09-29",
+      "dataDate": "29 Sep 2026",
+      "exitLoad": "Exit load of 0.50%, if redeemed within 30 days.",
+      "minLumpsum": 5000.0,
+      "minSip": 150.0,
+      "lockIn": "None",
+      "note": null,
+      "url": "https://groww.in/mutual-funds/tata-nifty-midcap-150-momentum-50-index-fund-direct-growth",
+      "amfiCode": "150738",
+      "detailsOn": "2026-09-30",
+      "detailsTriedOn": null,
+      "detailsSource": "Groww",
+      "tracked": true
+    },
+    {
+      "id": "mf-152881",
+      "kind": "Index Fund",
+      "name": "Nippon India Nifty 500 Momentum 50 Index Fund",
+      "amc": "Nippon India",
+      "category": "Index Fund",
+      "index": "Nifty 500 Momentum 50",
+      "capBadges": [
+        "Multi Cap",
+        "Momentum"
+      ],
+      "aumCr": 1326.49,
+      "aumDate": "30 Sep 2026",
+      "expenseRatio": 0.67,
+      "return1y": 5.15,
+      "cagr3y": null,
+      "cagr5y": null,
+      "risk": "Very High",
+      "launch": "30 Sep 2024",
+      "nav": 8.2828,
+      "navDate": "2026-09-29",
+      "dataDate": "29 Sep 2026",
+      "exitLoad": "Nil",
+      "minLumpsum": 1000.0,
+      "minSip": 100.0,
+      "lockIn": "None",
+      "note": null,
+      "url": "https://groww.in/mutual-funds/nippon-india-nifty-500-momentum-50-index-fund-direct-growth",
+      "amfiCode": "152881",
+      "detailsOn": "2026-09-30",
+      "detailsTriedOn": null,
+      "detailsSource": "Groww",
+      "tracked": true
+    },
+    {
       "id": "mf-147622",
       "kind": "Index Fund",
       "name": "Motilal Oswal Nifty Midcap 150 Index Fund",
@@ -32,7 +100,8 @@
       "amfiCode": "147622",
       "detailsOn": "2026-09-30",
       "detailsTriedOn": null,
-      "detailsSource": "Groww"
+      "detailsSource": "Groww",
+      "tracked": false
     },
     {
       "id": "mf-147623",
@@ -64,7 +133,8 @@
       "amfiCode": "147623",
       "detailsOn": "2026-09-30",
       "detailsTriedOn": null,
-      "detailsSource": "Groww"
+      "detailsSource": "Groww",
+      "tracked": false
     },
     {
       "id": "mf-148815",
@@ -96,7 +166,8 @@
       "amfiCode": "148815",
       "detailsOn": "2026-09-30",
       "detailsTriedOn": null,
-      "detailsSource": "Groww"
+      "detailsSource": "Groww",
+      "tracked": false
     },
     {
       "id": "mf-148745",
@@ -128,72 +199,8 @@
       "amfiCode": "148745",
       "detailsOn": "2026-09-30",
       "detailsTriedOn": null,
-      "detailsSource": "Groww"
-    },
-    {
-      "id": "mf-141877",
-      "kind": "Index Fund",
-      "name": "DSP Nifty 50 Equal Weight Index Fund",
-      "amc": "DSP",
-      "category": "Index Fund",
-      "index": "Nifty 50 Equal Weight",
-      "capBadges": [
-        "Large Cap",
-        "Equal Weight"
-      ],
-      "aumCr": 2671.44,
-      "aumDate": "30 Sep 2026",
-      "expenseRatio": 0.47,
-      "return1y": -0.68,
-      "cagr3y": 10.4,
-      "cagr5y": 10.23,
-      "risk": "Very High",
-      "launch": "23 Oct 2017",
-      "nav": 26.0874,
-      "navDate": "2026-09-29",
-      "dataDate": "29 Sep 2026",
-      "exitLoad": "Nil",
-      "minLumpsum": 100.0,
-      "minSip": 100.0,
-      "lockIn": "None",
-      "note": null,
-      "url": "https://groww.in/mutual-funds/dsp-nifty-50-equal-weight-index-fund-direct-growth",
-      "amfiCode": "141877",
-      "detailsOn": "2026-09-30",
-      "detailsTriedOn": null,
-      "detailsSource": "Groww"
-    },
-    {
-      "id": "mf-148703",
-      "kind": "Index Fund",
-      "name": "UTI Nifty200 Momentum 30 Index Fund",
-      "amc": "UTI",
-      "category": "Index Fund",
-      "index": "Nifty 200 Momentum 30",
-      "capBadges": [
-        "Momentum"
-      ],
-      "aumCr": 8513.34,
-      "aumDate": "30 Sep 2026",
-      "expenseRatio": 0.89,
-      "return1y": -0.92,
-      "cagr3y": 8.87,
-      "cagr5y": 8.91,
-      "risk": "Very High",
-      "launch": "10 Mar 2021",
-      "nav": 20.4909,
-      "navDate": "2026-09-29",
-      "dataDate": "29 Sep 2026",
-      "exitLoad": "Nil",
-      "minLumpsum": 1000.0,
-      "minSip": 500.0,
-      "lockIn": "None",
-      "note": null,
-      "url": "https://groww.in/mutual-funds/uti-nifty200-momentum-30-index-fund-direct-growth",
-      "amfiCode": "148703",
-      "detailsOn": "2026-09-30",
-      "detailsTriedOn": null,
-      "detailsSource": "Groww"
+      "detailsSource": "Groww",
+      "tracked": false
     }
   ],
   "equityCategories": [
@@ -1661,7 +1668,7 @@
         "priceDate": "2026-09-30",
         "change1m": -5.86,
         "change1y": -6.85,
-        "tradedValueCr": 221.92,
+        "tradedValueCr": 221.99,
         "aumCr": 67095.32,
         "expenseRatio": null,
         "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-50-bees",
@@ -1697,7 +1704,7 @@
         "priceDate": "2026-09-30",
         "change1m": -5.93,
         "change1y": -6.94,
-        "tradedValueCr": 22.21,
+        "tradedValueCr": 22.34,
         "aumCr": 44509.06,
         "expenseRatio": null,
         "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-etf",
@@ -3847,9 +3854,10 @@
     }
   ],
   "linkedIndexFunds": {
+    "NIFTYM150MOMNTM50": "mf-150738",
+    "NIFTY500MOMENTM50": "mf-152881",
     "NIFTY MIDCAP 150": "mf-147622",
-    "NIFTY SMALLCAP 250": "mf-147623",
-    "NIFTY200MOMENTM30": "mf-148703"
+    "NIFTY SMALLCAP 250": "mf-147623"
   },
   "notInvestable": {
     "INDIA VIX": "INDIA VIX measures expected volatility; no ETF tracks it.",
@@ -3857,11 +3865,11 @@
   },
   "selection": {
     "equity": "Top 5 Direct Growth funds per category by 5-year CAGR, from 309 funds",
-    "index": "Best 5-year CAGR, one fund per index, from 258 equity index funds",
+    "index": "Always tracked: 2; the rest by best 5-year CAGR, one fund per index, from 258 equity index funds",
     "etf": "Up to 6 ETFs per index, most traded first"
   },
   "refreshedOn": "2026-09-30",
-  "refreshedAt": "2026-09-30T10:30:45Z",
+  "refreshedAt": "2026-09-30T10:41:19Z",
   "pending": [],
   "sources": [
     {

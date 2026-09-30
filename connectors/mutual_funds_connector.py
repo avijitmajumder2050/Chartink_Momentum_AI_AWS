@@ -49,7 +49,14 @@ MIN_SUCCESS_SHARE = 0.6
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 TOP_PER_CATEGORY = 5
-INDEX_FUNDS_SHOWN = 6
+INDEX_FUNDS_SHOWN = 6  # including the always-tracked ones below
+# Index funds always shown first, whatever their rank (AMFI scheme codes,
+# Direct Growth). Both are too young for a 5-year CAGR, so the ranking
+# alone would never pick them.
+TRACKED_INDEX_FUNDS = [
+    "150738",  # Tata Nifty Midcap 150 Momentum 50 Index Fund
+    "152881",  # Nippon India Nifty 500 Momentum 50 Index Fund
+]
 ETFS_PER_INDEX = 6
 DETAILS_MAX_AGE_DAYS = 7
 STALE_NAV_DAYS = 10  # a scheme whose NAV is older than this is closed/merged
@@ -227,10 +234,10 @@ def _cap_badges(index_name):
         badges.append("Small Cap")
     elif "microcap" in k:
         badges.append("Micro Cap")
+    elif "nifty500" in k or "totalmarket" in k:  # before "nifty50", its prefix
+        badges.append("Multi Cap")
     elif any(x in k for x in ("nifty50", "nifty100", "next50", "sensex", "top10", "top15", "top20")):
         badges.append("Large Cap")
-    elif "nifty500" in k or "totalmarket" in k:
-        badges.append("Multi Cap")
     for word, badge in (("momentum", "Momentum"), ("value", "Value"), ("quality", "Quality"), ("alpha", "Alpha"),
                         ("lowvol", "Low Volatility"), ("equalweight", "Equal Weight")):
         if word in k:
@@ -406,6 +413,11 @@ def build(prev, today=None, log=print, force_details=False):
             equity.setdefault(cat, []).append(s)
         elif _is_equity_index_fund(s):
             index.append(s)
+    by_code = {s["code"]: s for s in fresh}
+    missing = [c for c in TRACKED_INDEX_FUNDS if c not in by_code]
+    if missing:
+        log(f"[mutual-funds] tracked index funds not in AMFI's file today: {missing}")
+    index += [by_code[c] for c in TRACKED_INDEX_FUNDS if c in by_code and by_code[c] not in index]
     candidates = [s for lst in equity.values() for s in lst] + index
     log(f"[mutual-funds] universe: {len(candidates)} direct-growth funds ({sum(len(v) for v in equity.values())} equity in {len(equity)} categories, {len(index)} index)")
 
@@ -430,15 +442,18 @@ def build(prev, today=None, log=print, force_details=False):
             equity_funds.append(_fund_record(s, "Equity MF", cat, returns[s["code"]], details_for(s)))
 
     index_funds, tracked = [], set()
-    for s in with_5y(index):
+    pinned = [by_code[c] for c in TRACKED_INDEX_FUNDS if c in by_code and c in returns]
+    for s in pinned + with_5y(index):
+        if len(index_funds) >= max(INDEX_FUNDS_SHOWN, len(pinned)):
+            break
         ix_name = _strip_amc(s["cleanName"], s["amc"])
         k = _norm(ix_name)
         if not k or k in tracked:
             continue
         tracked.add(k)
-        index_funds.append(_fund_record(s, "Index Fund", "Index Fund", returns[s["code"]], details_for(s), index_name=ix_name))
-        if len(index_funds) >= INDEX_FUNDS_SHOWN:
-            break
+        rec = _fund_record(s, "Index Fund", "Index Fund", returns[s["code"]], details_for(s), index_name=ix_name)
+        rec["tracked"] = s in pinned
+        index_funds.append(rec)
 
     try:
         etfs = _build_etfs(schemes, prev_codes, today, log)
@@ -467,7 +482,7 @@ def build(prev, today=None, log=print, force_details=False):
         "notInvestable": prev.get("notInvestable") or {},
         "selection": {
             "equity": f"Top {TOP_PER_CATEGORY} Direct Growth funds per category by 5-year CAGR, from {sum(len(v) for v in equity.values())} funds",
-            "index": f"Best 5-year CAGR, one fund per index, from {len(index)} equity index funds",
+            "index": f"Always tracked: {len(pinned)}; the rest by best 5-year CAGR, one fund per index, from {len(index)} equity index funds",
             "etf": f"Up to {ETFS_PER_INDEX} ETFs per index, most traded first",
         },
         "refreshedOn": today.isoformat(),

@@ -41,6 +41,7 @@ export function IndexFundCard({ f, compare, onToggle }) {
     <article style={{ ...card, display: "flex", flexDirection: "column", gap: 14, padding: 20, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <Chip tone="index">Index Fund</Chip>
+        {f.tracked && <Chip tone="mf">Tracked</Chip>}
         {(f.capBadges || []).map((b) => (
           <Chip key={b}>{b}</Chip>
         ))}
