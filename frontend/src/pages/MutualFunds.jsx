@@ -198,8 +198,13 @@ export default function MutualFunds() {
             <span style={{ color: C.accent, fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>Markets</span>
             <h1 style={{ fontSize: 32, fontWeight: 800, margin: "8px 0 0" }}>Mutual funds &amp; ETFs</h1>
             <p style={{ margin: "6px 0 0", color: C.muted, fontSize: 15 }}>Index funds, top equity funds by category and ETFs — AUM, returns, cost and trend.</p>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 12, height: 28, padding: "0 12px", borderRadius: 14, background: C.warnSoft, color: C.warn, fontSize: 12, fontWeight: 700 }}>
-              Snapshot, not live · {data.asOf}
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8, marginTop: 12, minHeight: 28, padding: "4px 12px", borderRadius: 14, fontSize: 12, fontWeight: 700,
+                background: data.refreshedOn ? C.posSoft : C.warnSoft, color: data.refreshedOn ? C.pos : C.warn,
+              }}
+            >
+              {data.refreshedOn ? "Updated daily" : "Snapshot, not live"} · {data.asOf}
             </span>
           </div>
           <FundSearch
@@ -284,10 +289,13 @@ export default function MutualFunds() {
             <strong style={{ color: C.ink }}>Disclaimer:</strong> Mutual fund and ETF investments are subject to market risks. Past performance does not guarantee future returns. This page is a data summary, not investment advice.
           </p>
           <p style={{ margin: 0 }}>
-            Figures were collected on {new Date(`${data.collectedOn}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} from public pages and are not live. Returns are for Direct Growth plans; 3Y and 5Y are annualised. “—” means the source didn't publish the figure or the fund is too new.
+            {data.refreshedOn
+              ? "NAV, 1Y/3Y/5Y returns and ETF prices are refreshed every trading day from AMFI and NSE data; returns are calculated from NAV history (3Y and 5Y annualised). AUM, expense ratio, exit load and minimums are updated periodically (dates shown with each fund)."
+              : `Figures were collected on ${new Date(`${data.collectedOn}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} from public pages and are not live.`}{" "}
+            Direct Growth plans. “—” means the figure isn't available or the fund is too new.
           </p>
           <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
-            {data.sources.map((s) => (
+            {[...(data.refreshSources || []), ...data.sources].map((s) => (
               <li key={s.label}>
                 {s.label}:{" "}
                 {s.url ? (

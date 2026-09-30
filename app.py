@@ -2938,6 +2938,12 @@ def _start_breakout_watch():
     threading.Thread(target=_breakout_watch_loop, daemon=True, name="breakout-watch").start()
 
 
+def _start_mutual_funds_refresh():
+    # Mutual Funds page: NAV / returns / ETF prices refreshed once per IST
+    # day from AMFI + Dhan (see connectors/mutual_funds_connector.py).
+    mutual_funds_connector.start_daily_refresh(log=lambda msg: print(msg, file=sys.stderr))
+
+
 @app.get("/api/admin/campaign/tracker")
 @role_required("admin")
 def api_admin_campaign_tracker():
@@ -3192,6 +3198,7 @@ if __name__ == "__main__":
     # starting a second monitor thread on a reloader respawn either.
     _start_alert_monitor()
     _start_breakout_watch()
+    _start_mutual_funds_refresh()
 
     # threaded=True lets the dev server actually parallelize the concurrent
     # per-symbol fetches the Chart Wall's EMA cross filter issues (356

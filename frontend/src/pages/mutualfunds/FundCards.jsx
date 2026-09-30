@@ -23,7 +23,9 @@ function AumBox({ f, right, size = 21 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", background: "#F7F8FA", border: `1px solid ${C.line}`, borderRadius: 11 }}>
       <div>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accent }}>AUM</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accent }}>
+          AUM{f.aumDate && <span style={{ color: C.faint, fontWeight: 600, letterSpacing: 0, textTransform: "none" }}> · {f.aumDate}</span>}
+        </div>
         <div className="num" style={{ fontSize: size, fontWeight: 700, whiteSpace: "nowrap" }}>{aumText(f.aumCr)}</div>
       </div>
       <div className="num" style={{ fontSize: 11, color: C.faint, textAlign: "right" }}>{right}</div>
@@ -86,7 +88,7 @@ export function EquityFundCard({ f, rank, compare, onToggle }) {
         <span style={{ fontSize: 12, fontWeight: 600, color: C.faint }}>{f.amc}</span>
         <h3 style={{ fontSize: 15.5, lineHeight: 1.3, fontWeight: 800, margin: "2px 0 0" }}>{f.name}</h3>
       </div>
-      <AumBox f={f} size={17} right={<>as of<br />{f.dataDate}</>} />
+      <AumBox f={f} size={17} right={f.nav != null ? <>NAV ₹{inr(f.nav)}<br />{f.dataDate}</> : <>as of<br />{f.dataDate}</>} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "12px 10px" }}>
         <Metric label="1Y return"><Pct v={f.return1y} /></Metric>
         <Metric label="3Y CAGR"><Pct v={f.cagr3y} /></Metric>

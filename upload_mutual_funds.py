@@ -55,6 +55,19 @@ def main():
         sys.exit("not uploaded — fix these first:\n  " + "\n  ".join(problems))
     client = chart_connector._s3()
     bucket = chart_connector._get_bucket(client)
+    # The backend refreshes NAV/returns/ETF prices in S3 daily. Uploading an
+    # older local copy over that would roll those numbers back, so require
+    # --force unless the local file is at least as fresh.
+    try:
+        live = json.loads(client.get_object(Bucket=bucket, Key=S3_KEY)["Body"].read())
+    except Exception:
+        live = {}
+    if (live.get("refreshedOn") or "") > (data.get("refreshedOn") or "") and "--force" not in sys.argv:
+        sys.exit(
+            f"not uploaded — S3 was refreshed on {live['refreshedOn']}, newer than this file "
+            f"({data.get('refreshedOn') or 'never refreshed'}). Start from the current S3 copy "
+            f"(aws s3 cp s3://{bucket}/{S3_KEY} mutual_funds.json), edit, then upload — or pass --force."
+        )
     body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
     client.put_object(Bucket=bucket, Key=S3_KEY, Body=body, ContentType="application/json; charset=utf-8")
     print(

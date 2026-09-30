@@ -55,7 +55,8 @@
       "minSip": 150,
       "lockIn": "None",
       "note": null,
-      "url": "https://groww.in/mutual-funds/tata-nifty-midcap-150-momentum-50-index-fund-direct-growth"
+      "url": "https://groww.in/mutual-funds/tata-nifty-midcap-150-momentum-50-index-fund-direct-growth",
+      "amfiCode": "150738"
     },
     {
       "id": "nip-500m50",
@@ -82,7 +83,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": "Expense ratio differs by source: Groww shows 0.67%, Tickertape 0.21%. Check the Nippon factsheet.",
-      "url": "https://groww.in/mutual-funds/nippon-india-nifty-500-momentum-50-index-fund-direct-growth"
+      "url": "https://groww.in/mutual-funds/nippon-india-nifty-500-momentum-50-index-fund-direct-growth",
+      "amfiCode": "152881"
     },
     {
       "id": "hdfc-sc250i",
@@ -108,7 +110,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://groww.in/mutual-funds/hdfc-nifty-smallcap-250-index-fund-direct-growth"
+      "url": "https://groww.in/mutual-funds/hdfc-nifty-smallcap-250-index-fund-direct-growth",
+      "amfiCode": "151727"
     }
   ],
   "equityCategories": [
@@ -144,7 +147,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/nippon-india-large-cap-fund-direct-plan-growth-plan"
+      "url": "https://www.indmoney.com/mutual-funds/nippon-india-large-cap-fund-direct-plan-growth-plan",
+      "amfiCode": "118632"
     },
     {
       "id": "inv-lc",
@@ -168,7 +172,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/invesco-india-large-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/invesco-india-large-cap-fund-direct-plan-growth",
+      "amfiCode": "120392"
     },
     {
       "id": "icici-lc",
@@ -192,7 +197,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-large-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-large-cap-fund-direct-plan-growth",
+      "amfiCode": "120586"
     },
     {
       "id": "hdfc-lc",
@@ -216,7 +222,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hdfc-large-cap-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/hdfc-large-cap-fund-direct-plan-growth-option",
+      "amfiCode": "119018"
     },
     {
       "id": "jm-lc",
@@ -240,7 +247,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/jm-large-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/jm-large-cap-fund-direct-growth",
+      "amfiCode": "120490"
     },
     {
       "id": "mo-lm",
@@ -264,7 +272,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-large-and-midcap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-large-and-midcap-fund-direct-growth",
+      "amfiCode": "147704"
     },
     {
       "id": "inv-lm",
@@ -288,7 +297,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/invesco-india-largemidcap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/invesco-india-largemidcap-fund-direct-plan-growth",
+      "amfiCode": "120357"
     },
     {
       "id": "ban-lm",
@@ -312,7 +322,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/bandhan-large-mid-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/bandhan-large-mid-cap-fund-direct-plan-growth",
+      "amfiCode": "118419"
     },
     {
       "id": "qnt-lm",
@@ -336,7 +347,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/quant-large-and-mid-cap-fund-growth-option-direct-plan"
+      "url": "https://www.indmoney.com/mutual-funds/quant-large-and-mid-cap-fund-growth-option-direct-plan",
+      "amfiCode": "120826"
     },
     {
       "id": "icici-lm",
@@ -360,7 +372,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-large-mid-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-large-mid-cap-fund-direct-plan-growth",
+      "amfiCode": "120596"
     },
     {
       "id": "mo-mc",
@@ -384,7 +397,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-midcap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-midcap-fund-direct-growth",
+      "amfiCode": "127042"
     },
     {
       "id": "inv-mc",
@@ -408,7 +422,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/invesco-india-mid-cap-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/invesco-india-mid-cap-fund-direct-plan-growth-option",
+      "amfiCode": "120403"
     },
     {
       "id": "hdfc-mc",
@@ -432,7 +447,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hdfc-mid-cap-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/hdfc-mid-cap-fund-direct-plan-growth-option",
+      "amfiCode": "118989"
     },
     {
       "id": "edel-mc",
@@ -456,7 +472,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/edelweiss-mid-cap-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/edelweiss-mid-cap-fund-direct-plan-growth-option",
+      "amfiCode": "140228"
     },
     {
       "id": "hsbc-mc",
@@ -480,7 +497,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hsbc-midcap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/hsbc-midcap-fund-direct-plan-growth",
+      "amfiCode": "151036"
     },
     {
       "id": "boi-sc",
@@ -504,7 +522,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/bank-of-india-small-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/bank-of-india-small-cap-fund-direct-growth",
+      "amfiCode": "145678"
     },
     {
       "id": "inv-sc",
@@ -528,7 +547,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/invesco-india-small-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/invesco-india-small-cap-fund-direct-growth",
+      "amfiCode": "145137"
     },
     {
       "id": "ban-sc",
@@ -552,7 +572,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/bandhan-small-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/bandhan-small-cap-fund-direct-growth",
+      "amfiCode": "147946"
     },
     {
       "id": "qnt-sc",
@@ -576,7 +597,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/quant-small-cap-fund-growth-option-direct-plan"
+      "url": "https://www.indmoney.com/mutual-funds/quant-small-cap-fund-growth-option-direct-plan",
+      "amfiCode": "120828"
     },
     {
       "id": "iti-sc",
@@ -600,7 +622,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/iti-small-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/iti-small-cap-fund-direct-growth",
+      "amfiCode": "147919"
     },
     {
       "id": "boi-fc",
@@ -624,7 +647,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/bank-of-india-flexi-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/bank-of-india-flexi-cap-fund-direct-growth",
+      "amfiCode": "148404"
     },
     {
       "id": "hdfc-fc",
@@ -648,7 +672,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hdfc-flexi-cap-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/hdfc-flexi-cap-fund-direct-plan-growth-option",
+      "amfiCode": "118955"
     },
     {
       "id": "jm-fc",
@@ -672,7 +697,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/jm-flexi-cap-fund-direct-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/jm-flexi-cap-fund-direct-growth-option",
+      "amfiCode": "120492"
     },
     {
       "id": "icici-fc",
@@ -696,7 +722,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-flexi-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-flexi-cap-fund-direct-growth",
+      "amfiCode": "148990"
     },
     {
       "id": "qnt-fc",
@@ -720,7 +747,8 @@
       "minSip": 250,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/quant-flexi-cap-fund-growth-option-direct-plan"
+      "url": "https://www.indmoney.com/mutual-funds/quant-flexi-cap-fund-growth-option-direct-plan",
+      "amfiCode": "120843"
     },
     {
       "id": "nip-mu",
@@ -744,7 +772,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/nippon-india-multi-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/nippon-india-multi-cap-fund-direct-plan-growth",
+      "amfiCode": "118650"
     },
     {
       "id": "mm-mu",
@@ -768,7 +797,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/mahindra-manulife-multi-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/mahindra-manulife-multi-cap-fund-direct-plan-growth",
+      "amfiCode": "141226"
     },
     {
       "id": "icici-mu",
@@ -792,7 +822,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-multi-cap-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-multi-cap-fund-direct-plan-growth",
+      "amfiCode": "120599"
     },
     {
       "id": "iti-mu",
@@ -816,7 +847,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/iti-multi-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/iti-multi-cap-fund-direct-growth",
+      "amfiCode": "147183"
     },
     {
       "id": "absl-mu",
@@ -840,7 +872,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/aditya-birla-sun-life-multi-cap-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/aditya-birla-sun-life-multi-cap-fund-direct-growth",
+      "amfiCode": "148921"
     },
     {
       "id": "hdfc-fo",
@@ -864,7 +897,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hdfc-focused-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/hdfc-focused-fund-direct-plan-growth-option",
+      "amfiCode": "118950"
     },
     {
       "id": "inv-fo",
@@ -888,7 +922,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/invesco-india-focused-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/invesco-india-focused-fund-direct-growth",
+      "amfiCode": "148481"
     },
     {
       "id": "icici-fo",
@@ -912,7 +947,8 @@
       "minSip": 100,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-focused-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/icici-prudential-focused-fund-direct-plan-growth",
+      "amfiCode": "120722"
     },
     {
       "id": "qnt-fo",
@@ -936,7 +972,8 @@
       "minSip": 1000,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/quant-focused-fund-growth-option-direct-plan"
+      "url": "https://www.indmoney.com/mutual-funds/quant-focused-fund-growth-option-direct-plan",
+      "amfiCode": "120834"
     },
     {
       "id": "mm-fo",
@@ -960,7 +997,8 @@
       "minSip": 500,
       "lockIn": "None",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/mahindra-manulife-focused-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/mahindra-manulife-focused-fund-direct-growth",
+      "amfiCode": "148567"
     },
     {
       "id": "mo-el",
@@ -984,7 +1022,8 @@
       "minSip": 500,
       "lockIn": "3 years",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-elss-tax-saver-fund-direct-plan-growth"
+      "url": "https://www.indmoney.com/mutual-funds/motilal-oswal-elss-tax-saver-fund-direct-plan-growth",
+      "amfiCode": "133386"
     },
     {
       "id": "qnt-el",
@@ -1008,7 +1047,8 @@
       "minSip": 500,
       "lockIn": "3 years",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/quant-elss-tax-saver-growth-option-fund-direct-plan"
+      "url": "https://www.indmoney.com/mutual-funds/quant-elss-tax-saver-growth-option-fund-direct-plan",
+      "amfiCode": "120847"
     },
     {
       "id": "sbi-el",
@@ -1032,7 +1072,8 @@
       "minSip": 500,
       "lockIn": "3 years",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/sbi-elss-tax-saver-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/sbi-elss-tax-saver-fund-direct-growth",
+      "amfiCode": "119723"
     },
     {
       "id": "jm-el",
@@ -1056,7 +1097,8 @@
       "minSip": 1000,
       "lockIn": "3 years",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/jm-elss-tax-saver-fund-direct-growth"
+      "url": "https://www.indmoney.com/mutual-funds/jm-elss-tax-saver-fund-direct-growth",
+      "amfiCode": "120494"
     },
     {
       "id": "hdfc-el",
@@ -1080,7 +1122,8 @@
       "minSip": 500,
       "lockIn": "3 years",
       "note": null,
-      "url": "https://www.indmoney.com/mutual-funds/hdfc-elss-tax-saver-fund-direct-plan-growth-option"
+      "url": "https://www.indmoney.com/mutual-funds/hdfc-elss-tax-saver-fund-direct-plan-growth-option",
+      "amfiCode": "119060"
     }
   ],
   "etfs": {
@@ -1095,7 +1138,8 @@
         "change1y": -6.59,
         "aumCr": 213793.98,
         "expenseRatio": 0.04,
-        "url": "https://www.indmoney.com/etfs/sbi-etf-nifty-50"
+        "url": "https://www.indmoney.com/etfs/sbi-etf-nifty-50",
+        "amfiCode": "135106"
       },
       {
         "symbol": "NIFTYBEES",
@@ -1107,7 +1151,8 @@
         "change1y": -6.55,
         "aumCr": 67095.32,
         "expenseRatio": 0.04,
-        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-50-bees"
+        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-50-bees",
+        "amfiCode": "140084"
       },
       {
         "symbol": "NIFTYIETF",
@@ -1119,7 +1164,8 @@
         "change1y": -6.53,
         "aumCr": 44509.06,
         "expenseRatio": 0.03,
-        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-etf"
+        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-etf",
+        "amfiCode": "121366"
       },
       {
         "symbol": "NIFTYETF",
@@ -1131,7 +1177,8 @@
         "change1y": -6.69,
         "aumCr": 5515.16,
         "expenseRatio": 0.07,
-        "url": "https://www.indmoney.com/etfs/mirae-asset-nifty-50-etf"
+        "url": "https://www.indmoney.com/etfs/mirae-asset-nifty-50-etf",
+        "amfiCode": "145633"
       },
       {
         "symbol": "HDFCNIFTY",
@@ -1143,7 +1190,8 @@
         "change1y": -6.59,
         "aumCr": 5429.29,
         "expenseRatio": 0.05,
-        "url": "https://www.indmoney.com/etfs/hdfc-nifty-50-etf"
+        "url": "https://www.indmoney.com/etfs/hdfc-nifty-50-etf",
+        "amfiCode": "135853"
       },
       {
         "symbol": "NIFTY1",
@@ -1155,7 +1203,8 @@
         "change1y": -6.42,
         "aumCr": 3525.3,
         "expenseRatio": 0.03,
-        "url": "https://www.indmoney.com/etfs/kotak-nifty-50-etf"
+        "url": "https://www.indmoney.com/etfs/kotak-nifty-50-etf",
+        "amfiCode": "112351"
       },
       {
         "symbol": "BSLNIFTY",
@@ -1167,7 +1216,8 @@
         "change1y": -6.49,
         "aumCr": 3324.57,
         "expenseRatio": 0.05,
-        "url": "https://www.indmoney.com/etfs/aditya-birla-sun-life-nifty-50-etf"
+        "url": "https://www.indmoney.com/etfs/aditya-birla-sun-life-nifty-50-etf",
+        "amfiCode": "115512"
       }
     ],
     "BANKNIFTY": [
@@ -1181,7 +1231,8 @@
         "change1y": 0.59,
         "aumCr": 8397.01,
         "expenseRatio": 0.2,
-        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-bank-bees"
+        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-bank-bees",
+        "amfiCode": "140087"
       }
     ],
     "NIFTYIT": [
@@ -1195,7 +1246,8 @@
         "change1y": -15.2,
         "aumCr": 3799.77,
         "expenseRatio": 0.29,
-        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-it"
+        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-it",
+        "amfiCode": "148408"
       }
     ],
     "NIFTY MIDCAP 150": [
@@ -1209,7 +1261,8 @@
         "change1y": 5.61,
         "aumCr": 4062.74,
         "expenseRatio": 0.24,
-        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-midcap-150"
+        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-midcap-150",
+        "amfiCode": "146271"
       },
       {
         "symbol": "MIDCAPETF",
@@ -1221,7 +1274,8 @@
         "change1y": 5.76,
         "aumCr": 1873.79,
         "expenseRatio": 0.12,
-        "url": "https://www.indmoney.com/etfs/mirae-asset-nifty-midcap-150-etf"
+        "url": "https://www.indmoney.com/etfs/mirae-asset-nifty-midcap-150-etf",
+        "amfiCode": "149918"
       }
     ],
     "NIFTY SMALLCAP 250": [
@@ -1235,7 +1289,8 @@
         "change1y": 7.19,
         "aumCr": null,
         "expenseRatio": null,
-        "url": "https://www.nseindia.com/get-quotes/equity?symbol=HDFCSML250"
+        "url": "https://www.nseindia.com/get-quotes/equity?symbol=HDFCSML250",
+        "amfiCode": "151375"
       }
     ],
     "NIFTY PHARMA": [
@@ -1249,7 +1304,8 @@
         "change1y": 24.99,
         "aumCr": null,
         "expenseRatio": null,
-        "url": "https://www.nseindia.com/get-quotes/equity?symbol=PHARMABEES"
+        "url": "https://www.nseindia.com/get-quotes/equity?symbol=PHARMABEES",
+        "amfiCode": "149008"
       }
     ],
     "NIFTY AUTO": [
@@ -1263,7 +1319,8 @@
         "change1y": 0.94,
         "aumCr": 496.71,
         "expenseRatio": 0.22,
-        "url": "https://www.indmoney.com/etfs/nippon-india-nifty-auto-etf"
+        "url": "https://www.indmoney.com/etfs/nippon-india-nifty-auto-etf",
+        "amfiCode": "149465"
       }
     ],
     "NIFTY PSU BANK": [
@@ -1277,7 +1334,8 @@
         "change1y": 11.03,
         "aumCr": 4040.68,
         "expenseRatio": 0.51,
-        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-psu-bank-bees"
+        "url": "https://www.indmoney.com/etfs/nippon-india-etf-nifty-psu-bank-bees",
+        "amfiCode": "140089"
       }
     ],
     "NIFTY PVT BANK": [
@@ -1291,7 +1349,8 @@
         "change1y": 0.41,
         "aumCr": 4286.58,
         "expenseRatio": 0.18,
-        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-private-bank-etf"
+        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-private-bank-etf",
+        "amfiCode": "147530"
       }
     ],
     "NIFTY METAL": [
@@ -1305,7 +1364,8 @@
         "change1y": 30.01,
         "aumCr": 1045.41,
         "expenseRatio": 0.49,
-        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-metal-etf"
+        "url": "https://www.indmoney.com/etfs/icici-prudential-nifty-metal-etf",
+        "amfiCode": "152769"
       }
     ],
     "NIFTY FMCG": [
@@ -1319,7 +1379,8 @@
         "change1y": -16.65,
         "aumCr": null,
         "expenseRatio": null,
-        "url": "https://www.nseindia.com/get-quotes/equity?symbol=FMCGIETF"
+        "url": "https://www.nseindia.com/get-quotes/equity?symbol=FMCGIETF",
+        "amfiCode": "149072"
       }
     ],
     "NIFTY IND DEFENCE": [
@@ -1333,7 +1394,8 @@
         "change1y": 16.18,
         "aumCr": 1357.99,
         "expenseRatio": 0.62,
-        "url": "https://www.indmoney.com/etfs/motilal-oswal-nifty-india-defence-etf"
+        "url": "https://www.indmoney.com/etfs/motilal-oswal-nifty-india-defence-etf",
+        "amfiCode": "152846"
       }
     ],
     "NIFTYCPSE": [
@@ -1347,7 +1409,8 @@
         "change1y": -0.39,
         "aumCr": 19040.04,
         "expenseRatio": 0.08,
-        "url": "https://www.indmoney.com/etfs/cpse-etf"
+        "url": "https://www.indmoney.com/etfs/cpse-etf",
+        "amfiCode": "140107"
       }
     ]
   },
