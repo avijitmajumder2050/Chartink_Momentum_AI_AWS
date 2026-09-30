@@ -235,6 +235,7 @@ def _as_of(data, funds, etfs):
 
 
 def _write(data):
+    data.pop("source", None)  # set by _load(); not part of the stored file
     body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
     client = chart_connector._s3()
     bucket = chart_connector._get_bucket(client)
@@ -286,8 +287,6 @@ def refresh(force=False):
         {"label": "1Y / 3Y / 5Y returns (daily, calculated from NAV history; 3Y/5Y annualised)", "name": "mfapi.in (AMFI data)", "url": "https://www.mfapi.in/"},
         {"label": "ETF last price, 1M / 1Y change (daily)", "name": "NSE close via Dhan", "url": None},
     ]
-    data.pop("source", None)
-
     _write(data)
     return {"refreshedOn": data["refreshedOn"], "funds": f"{ok_funds}/{len(funds)}", "etfs": f"{len(etfs) - len(etf_failed)}/{len(etfs)}", "failures": failures}
 
