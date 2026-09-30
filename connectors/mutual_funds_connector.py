@@ -37,7 +37,7 @@ from connectors import cache, chart_connector, mf_sources
 S3_KEY = "uploads/mutual_funds.json"
 LOCAL_JSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mutual_funds.json")
 CACHE_KEY = "mutual_funds_snapshot"
-CACHE_TTL_SECONDS = 60 * 60
+CACHE_TTL_SECONDS = 5 * 60  # short, so a manual S3 upload shows within minutes
 
 MFAPI_URL = "https://api.mfapi.in/mf/{code}"
 HTTP_HEADERS = mf_sources.HTTP_HEADERS
