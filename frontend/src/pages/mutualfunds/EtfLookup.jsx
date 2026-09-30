@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { C, Kpi, Pct, card, inr, td, th } from "./shared";
+import { C, Kpi, Pct, card, inr, td, th, erText, aumText } from "./shared";
 
 // Index -> ETF lookup. Index names are the same NSE names used in
 // sector_indices.csv, so each one links to its chart and Sector Overview.
@@ -118,7 +118,7 @@ export default function EtfLookup({ data, selected, onSelect }) {
               {etfs.some((e) => e.aumCr == null) && <p style={{ margin: 0, fontSize: 12, color: C.faint }}>“—” in AUM or expense ratio: not retrieved for this ETF. Check the AMC factsheet.</p>}
               {linked && (
                 <p style={{ margin: 0, fontSize: 13, color: C.ink2 }}>
-                  Index fund on this page tracking this index: <strong>{linked.name}</strong> · AUM ₹{inr(linked.aumCr)} Cr · expense ratio {linked.expenseRatio.toFixed(2)}%
+                  Index fund on this page tracking this index: <strong>{linked.name}</strong> · AUM {aumText(linked.aumCr)} · expense ratio {erText(linked.expenseRatio)}
                 </p>
               )}
             </>

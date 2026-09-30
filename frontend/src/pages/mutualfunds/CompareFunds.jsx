@@ -1,4 +1,4 @@
-import { C, LockIn, Pct, TrendBars, aumText, card, minText, selectStyle, td, th } from "./shared";
+import { C, LockIn, Pct, TrendBars, aumText, card, minText, selectStyle, td, th, erText } from "./shared";
 
 // Side-by-side comparison of the funds ticked "Compare" anywhere on the
 // page. Best value in each numeric column is highlighted (highest AUM and
@@ -77,7 +77,7 @@ export default function CompareFunds({ data, funds, compare, onToggle, onAdd, on
                     <td style={{ ...td, textAlign: "right" }}>{hl(r, "return1y", <Pct v={r.return1y} />)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{hl(r, "cagr3y", <Pct v={r.cagr3y} />)}</td>
                     <td style={{ ...td, textAlign: "right" }}>{hl(r, "cagr5y", <Pct v={r.cagr5y} />)}</td>
-                    <td className="num" style={{ ...td, textAlign: "right" }}>{hl(r, "expenseRatio", `${r.expenseRatio.toFixed(2)}%`)}</td>
+                    <td className="num" style={{ ...td, textAlign: "right" }}>{hl(r, "expenseRatio", erText(r.expenseRatio))}</td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>{r.exitLoad}</td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}><LockIn f={r} /></td>
                     <td className="num" style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>{minText(r)}</td>

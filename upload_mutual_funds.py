@@ -1,8 +1,8 @@
 """Upload mutual_funds.json — the Mutual Funds page's data snapshot — to S3
 as uploads/mutual_funds.json (same bucket / uploads/ convention as
-upload_sector_indices.py). The site reads it from S3 (cached for an
-hour), so refreshing the figures is: edit mutual_funds.json, run this.
-No deploy needed.
+upload_sector_indices.py). The backend rebuilds this file in S3 every
+day (mutual_funds_connector.refresh()), so this script is only for
+seeding S3 or a manual override.
 
 Validates the shape first so a typo can't break the live page.
 
@@ -34,8 +34,8 @@ def validate(data):
         if missing:
             problems.append(f"{f.get('id', '?')}: missing {missing}")
         for k in ("aumCr", "expenseRatio"):
-            if not isinstance(f.get(k), (int, float)):
-                problems.append(f"{f.get('id', '?')}: {k} must be a number")
+            if f.get(k) is not None and not isinstance(f.get(k), (int, float)):
+                problems.append(f"{f.get('id', '?')}: {k} must be a number or null")
     cats = set(data.get("equityCategories", []))
     stray = {f["category"] for f in data.get("equityFunds", []) if f.get("category") not in cats}
     if stray:

@@ -1,54 +1,106 @@
 """Mutual Funds page data — kept as JSON in S3 at uploads/mutual_funds.json
-(upload_mutual_funds.py uploads a hand-edited copy; the copy bundled in the
-repo is the fallback if S3 is unreachable).
+(the copy bundled in the repo is the fallback if S3 is unreachable).
 
-Refreshed automatically once a day (refresh_daily(), started by app.py
-when the backend starts) from official / free sources — no scraping of
-Groww or INDmoney:
+Rebuilt once a day by refresh() (started by app.py when the backend
+starts). Which funds appear is decided from the data each day, not a fixed
+list:
 
-  * NAV — AMFI's daily NAV file (portal.amfiindia.com NAVAll.txt), which
-    lists every scheme with its latest NAV. AMFI publishes each day's
-    NAVs overnight, so the 09:00 backend start always has the previous
-    trading day.
-  * 1Y / 3Y / 5Y returns — calculated here from each fund's full NAV
-    history (api.mfapi.in, built on AMFI data): 1Y point-to-point, 3Y
-    and 5Y annualised (CAGR). One consistent method for every fund.
-  * ETF last price and 1M / 1Y change — Dhan daily candles (NSE close).
+  * Equity funds — every Direct Growth scheme in AMFI's NAV file in the
+    Large, Large & Mid, Mid, Small, Flexi, Multi Cap, Focused, ELSS,
+    Value and Contra categories. 1Y / 3Y / 5Y returns are calculated from
+    each fund's NAV history (mfapi.in, AMFI data); the top 5 per category
+    by 5-year CAGR are shown (funds need 5 years of history).
+  * Index funds — AMFI's equity index funds, best 5-year CAGR, one fund
+    per tracked index.
+  * ETFs — NSE's ETF list, grouped under the page's indices, most traded
+    first; price, NAV and 1M / 1Y change from NSE's ETF market watch.
+  * AUM, expense ratio, exit load, minimums, risk, lock-in — Groww, with
+    INDmoney as fallback (connectors/mf_sources.py). Re-checked weekly per
+    fund; a fund whose lookup fails keeps its last known figures.
 
-Not refreshed (they change monthly or rarely, and have no free official
-daily feed): AUM, expense ratio, exit load, minimums, lock-in. Those stay
-as last uploaded; aumDate on each fund says when.
-
-Each fund is matched by its AMFI scheme code (amfiCode: Direct Plan,
-Growth for funds). A fund whose refresh fails keeps its previous numbers,
-and nothing is written unless most of the refresh succeeded.
+Nothing is written if the fund universe or most return calculations fail;
+the previous day's page stays up and the hourly check retries.
 """
 
 import datetime
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
-from connectors import cache, chart_connector
+from connectors import cache, chart_connector, mf_sources
 
 S3_KEY = "uploads/mutual_funds.json"
 LOCAL_JSON = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mutual_funds.json")
 CACHE_KEY = "mutual_funds_snapshot"
 CACHE_TTL_SECONDS = 60 * 60
 
-AMFI_NAV_URL = "https://portal.amfiindia.com/spages/NAVAll.txt"
 MFAPI_URL = "https://api.mfapi.in/mf/{code}"
-HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"}
+HTTP_HEADERS = mf_sources.HTTP_HEADERS
 HTTP_TIMEOUT_SECONDS = 30
 HISTORY_WORKERS = 4
-# Write back only if at least this share of funds refreshed — a source
-# outage shouldn't overwrite good figures with a half-empty set.
+# Write only if at least this share of return calculations succeeded — a
+# source outage shouldn't replace good rankings with a half-empty set.
 MIN_SUCCESS_SHARE = 0.6
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+TOP_PER_CATEGORY = 5
+INDEX_FUNDS_SHOWN = 6
+ETFS_PER_INDEX = 6
+DETAILS_MAX_AGE_DAYS = 7
+STALE_NAV_DAYS = 10  # a scheme whose NAV is older than this is closed/merged
+
+# (substring of AMFI's category, page category) — order matters: "large &
+# mid cap" must match before "large cap" and "mid cap".
+EQUITY_CATEGORIES = [
+    ("large & mid cap", "Large & Mid Cap"),
+    ("large cap", "Large Cap"),
+    ("mid cap", "Mid Cap"),
+    ("small cap", "Small Cap"),
+    ("flexi cap", "Flexi Cap"),
+    ("multi cap", "Multi Cap"),
+    ("focused", "Focused"),
+    ("elss", "ELSS"),
+    ("value", "Value"),
+    ("contra", "Contra"),
+]
+CATEGORY_ORDER = ["Large Cap", "Large & Mid Cap", "Mid Cap", "Small Cap", "Flexi Cap", "Multi Cap", "Focused", "ELSS", "Value", "Contra"]
+
+# Index funds whose names contain these aren't equity index funds.
+NON_EQUITY_WORDS = (
+    "gilt", "sdl", "g-sec", "gsec", "bond", "crisil", "ibx", "t-bill", "tbill", "liquid", "debt", "gold", "silver",
+    "money market", "overnight", "aaa", "corporate", "elss", "fof", "fund of fund", "income", "treasury",
+    "state development", "target maturity", "psu bank bond", "maturity", "g sec", "government",
+    # overseas index funds — the page covers Indian indices
+    "s&p", "nasdaq", "nyse", "fang", "world", "global", "hang seng", "taiwan", "japan", "china",
+    " us ", "u.s.", "international", "developed", "emerging", "europe",
+)
+
+# NSE ETF "Underlying Key" (normalised) -> index name used on the page
+# (the indices list, which matches sector_indices.csv).
+ETF_INDEX_MAP = {
+    "nifty50": "NIFTY", "niftybank": "BANKNIFTY", "niftyit": "NIFTYIT",
+    "niftymidcap150": "NIFTY MIDCAP 150", "niftysmallcap250": "NIFTY SMALLCAP 250",
+    "niftyauto": "NIFTY AUTO", "niftyprivatebank": "NIFTY PVT BANK", "nifty500": "NIFTY 500",
+    "niftyfinancialservices": "FINNIFTY", "niftyfmcg": "NIFTY FMCG", "niftymetal": "NIFTY METAL",
+    "niftypharma": "NIFTY PHARMA", "niftypsubank": "NIFTY PSU BANK", "niftyrealty": "NIFTY REALTY",
+    "niftycommodities": "NIFTY COMMODITIES", "niftyindiaconsumption": "NIFTY CONSUMPTION",
+    "niftypse": "NIFTYPSE", "niftyenergy": "NIFTY ENERGY", "niftyinfrastructure": "NIFTYINFRA",
+    "niftymnc": "NIFTY MNC", "niftymncetf": "NIFTY MNC", "niftycpse": "NIFTYCPSE",
+    "niftyservicessector": "NIFTY SERV SECTOR", "bsesensex": "SENSEX", "sensex": "SENSEX",
+    "niftyhealthcare": "NIFTY HEALTHCARE", "nifty500multicap502525": "NIFTY500 MULTICAP",
+    "niftyoilgas": "NIFTY OIL AND GAS", "niftyindiamanufacturing": "NIFTY INDIA MFG",
+    "nifty200momentum30": "NIFTY200MOMENTM30", "niftyalphalowvolatility30": "NIFTY ALPHALOWVOL",
+    "niftymidcap150momentum50": "NIFTYM150MOMNTM50", "niftyevandnewageautomotive": "NIFTY EV",
+    "niftyindiadefence": "NIFTY IND DEFENCE", "nifty500momentum50": "NIFTY500MOMENTM50",
+    "niftymicrocap250": "NIFTY MICROCAP250", "niftymidsmallcap400": "NIFTY MIDSMALLCAP 400",
+    "niftyindiadigital": "NIFTY IND DIGITAL", "niftymedia": "NIFTY MEDIA",
+    "niftyconsumerdurables": "NIFTY CONSR DURBL",
+}
 
 
 def _load():
@@ -70,27 +122,8 @@ def get_mutual_funds():
 
 
 # ---------------------------------------------------------------------
-# Daily refresh
+# Returns from NAV history
 # ---------------------------------------------------------------------
-def _amfi_navs():
-    """{scheme code: (nav, date)} from AMFI's daily file.
-    Format: code;ISIN growth;ISIN reinvest;name;plan;option;NAV;date"""
-    resp = requests.get(AMFI_NAV_URL, headers=HTTP_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
-    resp.raise_for_status()
-    out = {}
-    for line in resp.text.splitlines():
-        p = line.split(";")
-        if len(p) < 8 or not p[0].strip().isdigit():
-            continue
-        try:
-            out[p[0].strip()] = (float(p[-2]), datetime.datetime.strptime(p[-1].strip(), "%d-%b-%Y").date())
-        except ValueError:
-            continue
-    if len(out) < 1000:
-        raise RuntimeError(f"AMFI NAV file looks incomplete ({len(out)} schemes)")
-    return out
-
-
 def _nav_history(code):
     """[(date, nav)] oldest first."""
     resp = requests.get(MFAPI_URL.format(code=code), headers=HTTP_HEADERS, timeout=HTTP_TIMEOUT_SECONDS)
@@ -142,96 +175,320 @@ def returns_from_history(series):
     return tuple(out)
 
 
-def _months_before(d, months):
-    y, m = divmod(d.month - 1 - months, 12)
-    y += d.year
-    m += 1
-    day = min(d.day, [31, 29 if y % 4 == 0 and (y % 100 or y % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1])
-    return d.replace(year=y, month=m, day=day)
-
-
-def _etf_prices(symbol):
-    """(last close, close date, 1M %, 1Y %) from Dhan daily candles."""
-    from dhanhq import dhanhq
-
-    from connectors import dhan_connector
-
-    resolved, _ = dhan_connector.resolve_security_ids([symbol])
-    sid = resolved.get(symbol)
-    if sid is None:
-        raise RuntimeError(f"{symbol} not found")
-    today = datetime.datetime.now(IST).date()
-    resp = chart_connector._dhan().historical_daily_data(
-        security_id=str(sid), exchange_segment=dhanhq.NSE, instrument_type="EQUITY",
-        from_date=(today - datetime.timedelta(days=400)).isoformat(), to_date=today.isoformat(),
-    )
-    if resp.get("status") != "success":
-        raise RuntimeError(f"{symbol}: {resp.get('remarks')}")
-    d = resp["data"]
-    series = sorted(
-        (datetime.datetime.fromtimestamp(ts, IST).date(), float(c))
-        for ts, c in zip(d["timestamp"], d["close"]) if float(c) > 0
-    )
-    if not series:
-        raise RuntimeError(f"{symbol}: no candles")
-    end_date, last = series[-1]
-    pct = lambda start: round((last / start - 1) * 100, 2) if start else None
-    return last, end_date, pct(_value_on_or_before(series, _months_before(end_date, 1))), pct(_value_on_or_before(series, _years_before(end_date, 1)))
-
 
 def _fmt_date(d):
     return d.strftime("%-d %b %Y") if os.name != "nt" else d.strftime("%#d %b %Y")
 
 
-def _refresh_fund(f, navs):
-    code = str(f.get("amfiCode") or "")
-    if code not in navs:
-        raise RuntimeError(f"{f['id']}: AMFI code {code or '?'} not in today's NAV file")
-    nav, nav_date = navs[code]
-    r1, r3, r5 = returns_from_history(_nav_history(code))
-    f.setdefault("aumDate", f.get("dataDate"))  # AUM/expense keep their own (older) date
-    f.update(nav=nav, navDate=nav_date.isoformat(), dataDate=_fmt_date(nav_date), return1y=r1, cagr3y=r3, cagr5y=r5)
+def _norm(text):
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
 
 
-ETF_CALL_GAP_SECONDS = 1.5  # Dhan's data API rejects bursts (DH-904)
-ETF_RATE_LIMIT_RETRIES = 3
+def _equity_category(section):
+    m = re.match(r"Equity Schemes?\s*-\s*(.*)", section, flags=re.I)
+    if not m:
+        return None
+    s = m.group(1).lower()
+    for needle, cat in EQUITY_CATEGORIES:
+        if needle in s:
+            return cat
+    return None
 
 
-def _refresh_etf(e, navs):
-    code = str(e.get("amfiCode") or "")
-    if code in navs:
-        e["nav"] = navs[code][0]
-    for attempt in range(ETF_RATE_LIMIT_RETRIES + 1):
+def _is_equity_index_fund(s):
+    sec = s["section"].lower()
+    if "index fund" not in sec or "debt" in sec:
+        return False
+    name = s["name"].lower()
+    return not any(w in name for w in NON_EQUITY_WORDS)
+
+
+def _strip_amc(name, amc):
+    """'Tata Nifty Midcap 150 Momentum 50 Index Fund', 'Tata' -> 'Nifty Midcap 150 Momentum 50'."""
+    rest = name
+    if amc and rest.lower().startswith(amc.lower()):
+        rest = rest[len(amc):]
+    elif amc and rest.split()[:1] and rest.split()[0].lower() == amc.split()[0].lower():
+        rest = rest.split(None, 1)[1] if len(rest.split()) > 1 else rest
+    rest = re.sub(r"\b(Index Fund|Index|Fund|ETF)\b", " ", rest, flags=re.I)
+    return re.sub(r"\s+", " ", rest).strip(" -–")
+
+
+def _cap_badges(index_name):
+    k = _norm(index_name)
+    badges = []
+    if "largemidcap" in k:
+        badges.append("Large & Mid Cap")
+    elif "midsmallcap" in k:
+        badges.append("Mid & Small Cap")
+    elif "midcap" in k:
+        badges.append("Mid Cap")
+    elif "smallcap" in k:
+        badges.append("Small Cap")
+    elif "microcap" in k:
+        badges.append("Micro Cap")
+    elif any(x in k for x in ("nifty50", "nifty100", "next50", "sensex", "top10", "top15", "top20")):
+        badges.append("Large Cap")
+    elif "nifty500" in k or "totalmarket" in k:
+        badges.append("Multi Cap")
+    for word, badge in (("momentum", "Momentum"), ("value", "Value"), ("quality", "Quality"), ("alpha", "Alpha"),
+                        ("lowvol", "Low Volatility"), ("equalweight", "Equal Weight")):
+        if word in k:
+            badges.append(badge)
+    return badges
+
+
+def _history_returns(codes):
+    """{code: (1Y, 3Y, 5Y)} for the codes whose history loaded."""
+    def one(code):
+        return code, returns_from_history(_nav_history(code))
+
+    out = {}
+    with ThreadPoolExecutor(max_workers=HISTORY_WORKERS) as pool:
+        for fut in [pool.submit(one, c) for c in codes]:
+            try:
+                code, r = fut.result()
+                out[code] = r
+            except Exception:
+                continue
+    return out
+
+
+def _details(prev, today, lookups, force=False):
+    """AUM / expense ratio / exit load / minimums / risk / lock-in / url.
+    Reuses figures checked within the last week; otherwise tries each
+    lookup in turn (Groww, then INDmoney), else keeps the last known
+    figures. A failed lookup isn't retried until the next day."""
+    prev = dict(prev or {})
+    checked = prev.get("detailsOn")
+    if not force and checked and prev.get("aumCr") is not None and (today - datetime.date.fromisoformat(checked)).days < DETAILS_MAX_AGE_DAYS:
+        return prev
+    if not force and prev.get("detailsTriedOn") == today.isoformat():
+        return prev
+    for lookup in lookups:
         try:
-            last, px_date, m1, y1 = _etf_prices(e["symbol"])
+            fresh = lookup()
+        except Exception:
+            fresh = None
+        if fresh:
+            fresh["detailsOn"] = today.isoformat()
+            return fresh
+    prev["detailsTriedOn"] = today.isoformat()
+    return prev
+
+
+def _fund_record(s, kind, category, returns, det, index_name=None):
+    r1, r3, r5 = returns
+    det = det or {}
+    lock = mf_sources.normalise_lock_in(det.get("lockIn")) if det.get("lockIn") else ("3 years" if category == "ELSS" else "None")
+    checked = det.get("detailsOn")
+    return {
+        "id": f"mf-{s['code']}",
+        "kind": kind,
+        "name": det.get("fundName") or s["cleanName"],
+        "amc": s["amc"],
+        "category": category,
+        "index": index_name,
+        "capBadges": _cap_badges(index_name) if index_name else None,
+        "aumCr": det.get("aumCr"),
+        "aumDate": _fmt_date(datetime.date.fromisoformat(checked)) if checked else None,
+        "expenseRatio": det.get("expenseRatio"),
+        "return1y": r1,
+        "cagr3y": r3,
+        "cagr5y": r5,
+        "risk": det.get("risk") or "—",
+        "launch": det.get("launch"),
+        "nav": s["nav"],
+        "navDate": s["navDate"].isoformat(),
+        "dataDate": _fmt_date(s["navDate"]),
+        "exitLoad": det.get("exitLoad") or "—",
+        "minLumpsum": det.get("minLumpsum"),
+        "minSip": det.get("minSip"),
+        "lockIn": lock,
+        "note": None,
+        "url": det.get("url") or f"https://www.amfiindia.com/net-asset-value",
+        "amfiCode": s["code"],
+        "detailsOn": checked,
+        "detailsTriedOn": det.get("detailsTriedOn"),
+        "detailsSource": det.get("detailsSource"),
+    }
+
+
+def _prev_by_code(prev):
+    out = {}
+    for f in prev.get("indexFunds", []) + prev.get("equityFunds", []):
+        if f.get("amfiCode"):
+            out[str(f["amfiCode"])] = f
+    for lst in (prev.get("etfs") or {}).values():
+        for e in lst:
+            if e.get("symbol"):
+                out[e["symbol"]] = e
+    return out
+
+
+def _build_etfs(schemes, prev_codes, today, log):
+    """{page index: [etf]} from NSE's ETF list and market watch."""
+    by_isin = {}
+    for s in schemes:
+        for isin in s["isins"]:
+            by_isin.setdefault(isin, s)
+    quotes = mf_sources.nse_etf_quotes()
+    groups = {}
+    for row in mf_sources.nse_etf_list():
+        if row["kind"].upper() != "EQUITY":
+            continue
+        ix = ETF_INDEX_MAP.get(_norm(row["underlying"]))
+        q = quotes.get(row["symbol"])
+        if not ix or not q:
+            continue
+        groups.setdefault(ix, []).append((row, q))
+    out = {}
+    for ix, rows in groups.items():
+        rows.sort(key=lambda rq: rq[1]["tradedValue"] or 0, reverse=True)
+        lst = []
+        for row, q in rows[:ETFS_PER_INDEX]:
+            s = by_isin.get(row["isin"])
+            code = s["code"] if s else None
+            name = mf_sources.clean_fund_name(s["name"]) if s else row["securityName"]
+            prev = prev_codes.get(row["symbol"])
+            det = _details(prev, today, [
+                lambda r=row: mf_sources.groww_etf_details(r["symbol"], r["isin"]),
+                lambda p=prev: mf_sources.indmoney_details("", p.get("url")) if p and "indmoney.com/etfs" in (p.get("url") or "") else None,
+            ])
+            lst.append({
+                "symbol": row["symbol"],
+                "name": name,
+                "amc": s["amc"] if s else "",
+                "lastPrice": q["lastPrice"],
+                "nav": q["nav"],
+                "priceDate": q["priceDate"],
+                "change1m": q["change1m"],
+                "change1y": q["change1y"],
+                "tradedValueCr": round((q["tradedValue"] or 0) / 1e7, 2),
+                "aumCr": det.get("aumCr"),
+                "expenseRatio": det.get("expenseRatio"),
+                "url": det.get("url") or f"https://www.nseindia.com/get-quotes/equity?symbol={row['symbol']}",
+                "amfiCode": code,
+                "detailsOn": det.get("detailsOn"),
+                "detailsTriedOn": det.get("detailsTriedOn"),
+                "detailsSource": det.get("detailsSource"),
+            })
+        out[ix] = lst
+    if len(out) < 5:
+        raise RuntimeError(f"only {len(out)} indices have ETFs — NSE data looks incomplete")
+    log(f"[mutual-funds] ETFs: {sum(len(v) for v in out.values())} across {len(out)} indices")
+    return out
+
+
+def build(prev, today=None, log=print, force_details=False):
+    """The page data, rebuilt from the sources. `prev` is the current data
+    (for last-known details and the indices list). Raises if the fund
+    universe or most return calculations fail."""
+    today = today or datetime.datetime.now(IST).date()
+    prev_codes = _prev_by_code(prev)
+    pending = set()
+
+    schemes = mf_sources.amfi_schemes()
+    latest = max(s["navDate"] for s in schemes)
+    fresh = [s for s in schemes if (latest - s["navDate"]).days <= STALE_NAV_DAYS and mf_sources.is_direct_growth(s)]
+    for s in fresh:
+        s["cleanName"] = mf_sources.clean_fund_name(s["name"])
+
+    equity, index = {}, []
+    seen = set()
+    for s in fresh:
+        key = (s["section"], _norm(s["cleanName"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        cat = _equity_category(s["section"])
+        if cat:
+            equity.setdefault(cat, []).append(s)
+        elif _is_equity_index_fund(s):
+            index.append(s)
+    candidates = [s for lst in equity.values() for s in lst] + index
+    log(f"[mutual-funds] universe: {len(candidates)} direct-growth funds ({sum(len(v) for v in equity.values())} equity in {len(equity)} categories, {len(index)} index)")
+
+    returns = _history_returns([s["code"] for s in candidates])
+    if len(returns) < MIN_SUCCESS_SHARE * len(candidates):
+        raise RuntimeError(f"NAV history loaded for only {len(returns)}/{len(candidates)} funds — not written")
+
+    def with_5y(lst):
+        ranked = [s for s in lst if (returns.get(s["code"]) or (None, None, None))[2] is not None]
+        return sorted(ranked, key=lambda s: returns[s["code"]][2], reverse=True)
+
+    def details_for(s):
+        prev_f = prev_codes.get(s["code"])
+        return _details(prev_f, today, [
+            lambda: mf_sources.groww_details(s["code"], s["cleanName"]),
+            lambda: mf_sources.indmoney_details(s["cleanName"], (prev_f or {}).get("url")),
+        ], force=force_details)
+
+    equity_funds = []
+    for cat in CATEGORY_ORDER:
+        for s in with_5y(equity.get(cat, []))[:TOP_PER_CATEGORY]:
+            equity_funds.append(_fund_record(s, "Equity MF", cat, returns[s["code"]], details_for(s)))
+
+    index_funds, tracked = [], set()
+    for s in with_5y(index):
+        ix_name = _strip_amc(s["cleanName"], s["amc"])
+        k = _norm(ix_name)
+        if not k or k in tracked:
+            continue
+        tracked.add(k)
+        index_funds.append(_fund_record(s, "Index Fund", "Index Fund", returns[s["code"]], details_for(s), index_name=ix_name))
+        if len(index_funds) >= INDEX_FUNDS_SHOWN:
             break
-        except Exception as exc:
-            if "DH-904" not in str(exc) or attempt == ETF_RATE_LIMIT_RETRIES:
-                raise
-            time.sleep(5 * (attempt + 1))
-    e.update(lastPrice=last, priceDate=px_date.isoformat(), change1m=m1, change1y=y1)
-    return px_date
 
+    try:
+        etfs = _build_etfs(schemes, prev_codes, today, log)
+    except Exception as exc:
+        log(f"[mutual-funds] ETFs not refreshed, keeping previous: {exc}")
+        etfs = prev.get("etfs") or {}
+        pending.add("etfs")
 
-def _refresh_etfs(etfs, navs, failures):
-    """Sequential, paced. Returns (price dates, failed symbols)."""
-    px_dates, failed = [], []
-    for i, e in enumerate(etfs):
-        if i:
-            time.sleep(ETF_CALL_GAP_SECONDS)
-        try:
-            px_dates.append(_refresh_etf(e, navs))
-        except Exception as exc:
-            failed.append(e["symbol"])
-            failures.append(f"ETF {e['symbol']}: {exc}")
-    return px_dates, failed
+    linked = {}
+    for f in index_funds:
+        page_ix = ETF_INDEX_MAP.get(_norm(f["index"]))
+        if page_ix and page_ix not in linked:
+            linked[page_ix] = f["id"]
 
-
-def _as_of(data, funds, etfs):
-    nav_date = max(datetime.date.fromisoformat(f["navDate"]) for f in funds if f.get("navDate"))
-    px = [datetime.date.fromisoformat(e["priceDate"]) for e in etfs if e.get("priceDate")]
-    px_part = f" · ETF prices NSE close {_fmt_date(max(px))}" if px else ""
-    data["asOf"] = f"NAV & returns as of {_fmt_date(nav_date)} (AMFI){px_part} · AUM & expense ratio as last updated"
+    px_dates = [e["priceDate"] for lst in etfs.values() for e in lst if e.get("priceDate")]
+    px_part = f" · ETF prices NSE close {_fmt_date(datetime.date.fromisoformat(max(px_dates)))}" if px_dates else ""
+    data = {
+        "title": prev.get("title") or "Mutual Funds",
+        "asOf": f"NAV & returns as of {_fmt_date(latest)} (AMFI){px_part} · AUM & expense ratio checked weekly",
+        "indexFunds": index_funds,
+        "equityCategories": [c for c in CATEGORY_ORDER if any(f["category"] == c for f in equity_funds)],
+        "equityFunds": equity_funds,
+        "etfs": etfs,
+        "indices": prev.get("indices") or [],
+        "linkedIndexFunds": linked,
+        "notInvestable": prev.get("notInvestable") or {},
+        "selection": {
+            "equity": f"Top {TOP_PER_CATEGORY} Direct Growth funds per category by 5-year CAGR, from {sum(len(v) for v in equity.values())} funds",
+            "index": f"Best 5-year CAGR, one fund per index, from {len(index)} equity index funds",
+            "etf": f"Up to {ETFS_PER_INDEX} ETFs per index, most traded first",
+        },
+        "refreshedOn": today.isoformat(),
+        "refreshedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "pending": sorted(pending),
+        "sources": [
+            {"label": "Fund list, categories and daily NAV", "name": "AMFI NAV file", "url": "https://www.amfiindia.com/net-asset-value"},
+            {"label": "1Y / 3Y / 5Y returns (calculated from NAV history; 3Y/5Y annualised)", "name": "mfapi.in (AMFI data)", "url": "https://www.mfapi.in/"},
+            {"label": "AUM, expense ratio, exit load, minimums, risk, lock-in", "name": "Groww fund pages (INDmoney as fallback)", "url": "https://groww.in/mutual-funds"},
+            {"label": "ETF list, last price, NAV, 1M and 1Y change", "name": "NSE ETF market watch", "url": "https://www.nseindia.com/market-data/exchange-traded-funds-etf"},
+        ],
+    }
+    summary = {
+        "refreshedOn": data["refreshedOn"],
+        "equity": f"{len(equity_funds)} funds / {len(data['equityCategories'])} categories",
+        "index": len(index_funds),
+        "etfs": sum(len(v) for v in etfs.values()),
+        "returnsLoaded": f"{len(returns)}/{len(candidates)}",
+        "pending": data["pending"],
+    }
+    return data, summary
 
 
 def _write(data):
@@ -243,52 +500,16 @@ def _write(data):
     cache.get_or_fetch(CACHE_KEY, CACHE_TTL_SECONDS, _load, force=True)
 
 
-def refresh(force=False):
-    """Refresh NAV/returns/ETF prices and write to S3. Returns a summary
-    dict; skips (unless force) if already refreshed today (IST)."""
+def refresh(force=False, log=print):
+    """Rebuild and write to S3. Once per IST day; the same day again only
+    if the ETF section failed (pending), or with force."""
     today = datetime.datetime.now(IST).date()
-    data = _load()
-    funds = data["indexFunds"] + data["equityFunds"]
-    etfs = [e for lst in data["etfs"].values() for e in lst]
-    if data.get("refreshedOn") == today.isoformat() and not force:
-        pending = set(data.get("etfPending") or [])
-        if not pending:
-            return {"skipped": True, "refreshedOn": data["refreshedOn"]}
-        # Funds are done for today; retry only the ETFs that failed earlier.
-        failures = []
-        _, failed = _refresh_etfs([e for e in etfs if e["symbol"] in pending], _amfi_navs(), failures)
-        data["etfPending"] = failed
-        _as_of(data, funds, etfs)
-        _write(data)
-        return {"refreshedOn": data["refreshedOn"], "etfRetry": f"{len(pending) - len(failed)}/{len(pending)}", "failures": failures}
-
-    navs = _amfi_navs()
-    failures = []
-    with ThreadPoolExecutor(max_workers=HISTORY_WORKERS) as pool:
-        results = {f["id"]: pool.submit(_refresh_fund, f, navs) for f in funds}
-    for fid, fut in results.items():
-        try:
-            fut.result()
-        except Exception as exc:
-            failures.append(f"{fid}: {exc}")
-    ok_funds = len(funds) - len(failures)
-
-    _, etf_failed = _refresh_etfs(etfs, navs, failures)
-
-    if ok_funds < MIN_SUCCESS_SHARE * len(funds):
-        raise RuntimeError(f"only {ok_funds}/{len(funds)} funds refreshed — not written. First failures: {failures[:5]}")
-
-    _as_of(data, funds, etfs)
-    data["etfPending"] = etf_failed  # retried on the next hourly check
-    data["refreshedOn"] = today.isoformat()
-    data["refreshedAt"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    data["refreshSources"] = [
-        {"label": "NAV (daily)", "name": "AMFI NAV file", "url": "https://www.amfiindia.com/net-asset-value"},
-        {"label": "1Y / 3Y / 5Y returns (daily, calculated from NAV history; 3Y/5Y annualised)", "name": "mfapi.in (AMFI data)", "url": "https://www.mfapi.in/"},
-        {"label": "ETF last price, 1M / 1Y change (daily)", "name": "NSE close via Dhan", "url": None},
-    ]
+    prev = _load()
+    if prev.get("refreshedOn") == today.isoformat() and not prev.get("pending") and not force:
+        return {"skipped": True, "refreshedOn": prev["refreshedOn"]}
+    data, summary = build(prev, today, log=log)
     _write(data)
-    return {"refreshedOn": data["refreshedOn"], "funds": f"{ok_funds}/{len(funds)}", "etfs": f"{len(etfs) - len(etf_failed)}/{len(etfs)}", "failures": failures}
+    return summary
 
 
 # ---------------------------------------------------------------------
@@ -302,13 +523,13 @@ def _refresh_loop(log):
     time.sleep(REFRESH_START_DELAY_SECONDS)
     while True:
         try:
-            result = refresh()
+            result = refresh(log=log)
             if not result.get("skipped"):
                 log(f"[mutual-funds] refreshed: {result}")
         except Exception as exc:
             log(f"[mutual-funds] daily refresh failed (keeping previous data): {exc}")
-        # Hourly check: runs once per IST day (refreshedOn), retries any
-        # ETFs that failed, and covers a backend left running past midnight.
+        # Hourly check: rebuilds once per IST day, retries anything left
+        # pending, and covers a backend left running past midnight.
         time.sleep(REFRESH_CHECK_SECONDS)
 
 

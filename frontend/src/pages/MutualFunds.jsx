@@ -7,12 +7,12 @@ import { EquityFundCard, IndexFundCard } from "./mutualfunds/FundCards";
 import { C, SORTS, SectionHead, card, inr, selectStyle, sortFunds } from "./mutualfunds/shared";
 
 // Markets -> Mutual Funds. Integrated from the "MarketPulse Fund
-// Watchlist" artifact: same sections, Quantile styling. Data is a
-// hand-collected snapshot served from S3 (GET /api/markets/mutual-funds,
-// uploads/mutual_funds.json — see upload_mutual_funds.py), not live.
+// Watchlist" artifact: same sections, Quantile styling. The backend
+// rebuilds the fund list and figures daily into S3 (GET
+// /api/markets/mutual-funds, uploads/mutual_funds.json — see
+// connectors/mutual_funds_connector.py), so fund ids change as rankings do.
 
 const COMPARE_KEY = "quantile.mf.compare";
-const DEFAULT_COMPARE = ["tata-m150m50", "nip-500m50", "hdfc-sc250i", "hdfc-mc"];
 
 function loadCompare() {
   try {
@@ -21,15 +21,15 @@ function loadCompare() {
   } catch {
     // storage blocked or corrupt — fall back to the default selection
   }
-  return new Set(DEFAULT_COMPARE);
+  return null; // picked from the data once it loads
 }
 
 function Insights({ data, funds }) {
   // Computed from the data (not hard-coded), so they stay true when the
   // snapshot in S3 is refreshed.
-  const withEr = [...funds].sort((a, b) => a.expenseRatio - b.expenseRatio);
+  const withEr = funds.filter((f) => f.expenseRatio != null).sort((a, b) => a.expenseRatio - b.expenseRatio);
   const best5 = funds.filter((f) => f.cagr5y != null).sort((a, b) => b.cagr5y - a.cagr5y)[0];
-  const largest = [...funds].sort((a, b) => b.aumCr - a.aumCr)[0];
+  const largest = funds.filter((f) => f.aumCr != null).sort((a, b) => b.aumCr - a.aumCr)[0];
   const niftyEtfs = (data.etfs.NIFTY || []).filter((e) => e.expenseRatio != null).sort((a, b) => a.expenseRatio - b.expenseRatio || (b.aumCr || 0) - (a.aumCr || 0));
   const items = [
     withEr[0] && { title: "Lowest cost", body: withEr[0].name, stat: `Expense ratio ${withEr[0].expenseRatio.toFixed(2)}% · ${withEr[0].category}`, icon: "M12 3v18M17 7H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6" },
@@ -132,6 +132,7 @@ export default function MutualFunds() {
   }, []);
 
   useEffect(() => {
+    if (!compare) return;
     try {
       localStorage.setItem(COMPARE_KEY, JSON.stringify([...compare]));
     } catch {
@@ -140,10 +141,18 @@ export default function MutualFunds() {
   }, [compare]);
 
   const funds = useMemo(() => (data && !data.unavailable ? [...data.indexFunds, ...data.equityFunds] : []), [data]);
+  // The fund list is re-ranked daily, so a remembered selection can name
+  // funds that dropped out; keep the ones still listed. With nothing
+  // remembered, start with the top two index and equity funds.
+  const activeCompare = useMemo(() => {
+    const ids = new Set(funds.map((f) => f.id));
+    if (compare) return new Set([...compare].filter((id) => ids.has(id)));
+    return new Set([...(data?.indexFunds || []).slice(0, 2), ...(data?.equityFunds || []).slice(0, 2)].map((f) => f.id));
+  }, [compare, funds, data]);
   const category = mcat || data?.equityCategories?.[0];
   const toggle = (id) =>
-    setCompare((s) => {
-      const n = new Set(s);
+    setCompare(() => {
+      const n = new Set(activeCompare);
       if (n.has(id)) n.delete(id);
       else n.add(id);
       return n;
@@ -223,19 +232,19 @@ export default function MutualFunds() {
           />
         </div>
 
-        <Screener data={data} funds={funds} compare={compare} onToggle={toggle} />
+        <Screener data={data} funds={funds} compare={activeCompare} onToggle={toggle} />
 
         <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <SectionHead id="index-funds" title="Index funds" sub="Passive funds tracking broad-market and factor indices." meta="Direct Growth plans" />
+          <SectionHead id="index-funds" title="Index funds" sub={data.selection?.index ? `Passive funds tracking broad-market and factor indices. ${data.selection.index}.` : "Passive funds tracking broad-market and factor indices."} meta="Direct Growth plans" />
           <div className="mf-grid3">
             {data.indexFunds.map((f) => (
-              <IndexFundCard key={f.id} f={f} compare={compare} onToggle={toggle} />
+              <IndexFundCard key={f.id} f={f} compare={activeCompare} onToggle={toggle} />
             ))}
           </div>
         </section>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <SectionHead id="equity-funds" title="Equity mutual funds" sub="Top 5 funds in each SEBI equity category, ranked by 5-year CAGR. Direct Growth plans." />
+          <SectionHead id="equity-funds" title="Equity mutual funds" sub={data.selection?.equity ? `${data.selection.equity}. Direct Growth plans, re-ranked daily.` : "Top 5 funds in each SEBI equity category, ranked by 5-year CAGR. Direct Growth plans."} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
             <div role="tablist" aria-label="Equity category" className="mf-tabs">
               {data.equityCategories.map((c) => (
@@ -263,7 +272,7 @@ export default function MutualFunds() {
           </div>
           <div className="mf-grid5">
             {shown.map(({ f, rank }) => (
-              <EquityFundCard key={f.id} f={f} rank={rank} compare={compare} onToggle={toggle} />
+              <EquityFundCard key={f.id} f={f} rank={rank} compare={activeCompare} onToggle={toggle} />
             ))}
           </div>
         </section>
@@ -273,9 +282,9 @@ export default function MutualFunds() {
         <CompareFunds
           data={data}
           funds={funds}
-          compare={compare}
+          compare={activeCompare}
           onToggle={toggle}
-          onAdd={(id) => setCompare((s) => new Set([...s, id]))}
+          onAdd={(id) => setCompare(new Set([...activeCompare, id]))}
           onClear={() => setCompare(new Set())}
         />
 

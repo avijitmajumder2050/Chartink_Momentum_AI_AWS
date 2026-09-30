@@ -23,6 +23,7 @@ export const card = { background: "#FFFFFF", border: `1px solid ${C.line}`, bord
 export const inr = (n, d = 2) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }));
 export const aumText = (n) => (n == null ? "—" : `₹${inr(n, Number.isInteger(n) ? 0 : 2)} Cr`);
 export const rupees = (n) => (n == null ? "—" : `₹${Number(n).toLocaleString("en-IN")}`);
+export const erText = (v) => (v == null ? "—" : `${v.toFixed(2)}%`);
 export const minText = (f) => (f.minLumpsum == null ? "—" : `${rupees(f.minLumpsum)} / ${rupees(f.minSip)}`);
 
 export function Pct({ v }) {

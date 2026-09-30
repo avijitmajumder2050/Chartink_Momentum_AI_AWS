@@ -1,4 +1,4 @@
-import { C, CompareToggle, LockIn, Pct, TrendBars, aumText, card, inr, minText } from "./shared";
+import { C, CompareToggle, LockIn, Pct, TrendBars, aumText, card, erText, inr, minText } from "./shared";
 
 function Metric({ label, children, span }) {
   return (
@@ -58,7 +58,7 @@ export function IndexFundCard({ f, compare, onToggle }) {
         <Metric label="3Y CAGR"><Pct v={f.cagr3y} /></Metric>
         <Metric label="5Y CAGR"><Pct v={f.cagr5y} /></Metric>
         <Metric label="Expense ratio">
-          <span className="num">{f.expenseRatio.toFixed(2)}%</span>
+          <span className="num">{erText(f.expenseRatio)}</span>
           {f.note && <span style={{ color: C.warn }}> †</span>}
         </Metric>
         <Metric label="Risk">{f.risk}</Metric>
@@ -93,7 +93,7 @@ export function EquityFundCard({ f, rank, compare, onToggle }) {
         <Metric label="1Y return"><Pct v={f.return1y} /></Metric>
         <Metric label="3Y CAGR"><Pct v={f.cagr3y} /></Metric>
         <Metric label="5Y CAGR"><Pct v={f.cagr5y} /></Metric>
-        <Metric label="Expense ratio"><span className="num">{f.expenseRatio.toFixed(2)}%</span></Metric>
+        <Metric label="Expense ratio"><span className="num">{erText(f.expenseRatio)}</span></Metric>
         <Metric label="Risk">{f.risk}</Metric>
         <Metric label="Returns trend"><TrendBars f={f} /></Metric>
         <Metric label="Exit load" span="span 2"><span style={{ fontSize: 13, fontWeight: 600 }}>{f.exitLoad}</span></Metric>

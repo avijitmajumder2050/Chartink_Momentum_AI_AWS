@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { C, Kpi, LockIn, Pct, SORTS, TrendBars, aumText, card, inr, minText, selectStyle, sortFunds, td, th } from "./shared";
+import { C, Kpi, LockIn, Pct, SORTS, TrendBars, aumText, card, inr, minText, selectStyle, sortFunds, td, th, erText } from "./shared";
 
 // Fund screener: filters are edited as a DRAFT and only take effect on
 // "Apply" (the draft shows a live "N funds will match" count meanwhile),
@@ -60,7 +60,7 @@ export default function Screener({ data, funds, compare, onToggle }) {
   if (applied.risk !== "all") tags.push(["risk", `Risk: ${applied.risk}`]);
 
   const total = rows.reduce((t, f) => t + f.aumCr, 0);
-  const cheapest = [...rows].sort((a, b) => a.expenseRatio - b.expenseRatio)[0];
+  const cheapest = rows.filter((f) => f.expenseRatio != null).sort((a, b) => a.expenseRatio - b.expenseRatio)[0];
   const best3 = rows.filter((f) => f.cagr3y != null).sort((a, b) => b.cagr3y - a.cagr3y)[0];
 
   return (
@@ -245,7 +245,7 @@ export default function Screener({ data, funds, compare, onToggle }) {
                       <td style={{ ...td, textAlign: "right" }}><Pct v={f.return1y} /></td>
                       <td style={{ ...td, textAlign: "right" }}><Pct v={f.cagr3y} /></td>
                       <td style={{ ...td, textAlign: "right" }}><Pct v={f.cagr5y} /></td>
-                      <td className="num" style={{ ...td, textAlign: "right" }}>{f.expenseRatio.toFixed(2)}%</td>
+                      <td className="num" style={{ ...td, textAlign: "right" }}>{erText(f.expenseRatio)}</td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}>{f.exitLoad}</td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}><LockIn f={f} /></td>
                       <td className="num" style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>{minText(f)}</td>
