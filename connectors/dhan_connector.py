@@ -121,20 +121,32 @@ def resolve_security_ids(symbols):
     return resolved, unresolved
 
 
-def _fetch_historical_daily(security_id, from_date, to_date):
-    response = _get_client().historical_daily_data(
-        security_id=security_id,
-        exchange_segment=dhanhq.NSE,
-        instrument_type="EQUITY",
-        from_date=from_date,
-        to_date=to_date,
-    )
-
-    if response.get("status") != "success":
-        raise RuntimeError(f"Dhan historical_daily_data failed for {security_id}: {response.get('remarks')}")
+def _fetch_historical_daily(security_id, from_date, to_date, max_retries=6, retry_delay=2):
+    # Retried on DH-904 like _fetch_intraday_minute: confirmed live
+    # (2026-10-04) that this endpoint rate-limits too once ~100 stocks are
+    # asked for back to back (pivot_pullback_scanner.py).
+    for attempt in range(1, max_retries + 1):
+        response = _get_client().historical_daily_data(
+            security_id=security_id,
+            exchange_segment=dhanhq.NSE,
+            instrument_type="EQUITY",
+            from_date=from_date,
+            to_date=to_date,
+        )
+        if response.get("status") == "success":
+            break
+        remarks = response.get("remarks")
+        rate_limited = isinstance(remarks, dict) and remarks.get("error_code") == "DH-904"
+        if rate_limited and attempt < max_retries:
+            time.sleep(retry_delay * attempt)
+            continue
+        raise RuntimeError(f"Dhan historical_daily_data failed for {security_id}: {remarks}")
 
     candles = response["data"]
-    dates = pd.to_datetime(candles["timestamp"], unit="s").strftime("%Y-%m-%d")
+    # Dhan stamps each daily candle at 00:00 IST — read as UTC that's the
+    # previous evening, which labelled every row one date early (a Monday
+    # candle came out dated Sunday).
+    dates = pd.to_datetime(candles["timestamp"], unit="s", utc=True).tz_convert("Asia/Kolkata").strftime("%Y-%m-%d")
     df = pd.DataFrame(
         {
             "date": dates,

@@ -375,8 +375,14 @@ def run_first_minute_movers():
 
 
 def run_pivot_pullback():
-
     df, breadth = pivot_pullback_mod.get_pivot_pullback_setups()
+    return _pivot_pullback_payload(df, breadth)
+
+
+def _pivot_pullback_payload(df, breadth):
+    """Scanner-page result for one pivot scan — shared by the manual "Run
+    scanner" action and the pivot-watch bot, which caches each automatic
+    run under the same key so the page shows it without a re-run."""
 
     if df.empty:
         raise RuntimeError(
@@ -386,6 +392,7 @@ def run_pivot_pullback():
 
     rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
     signals = int(df["Entry"].notna().sum())
+    trades = int((df["Trigger Time"].notna() & (df["Status"] != pivot_pullback_mod.SKIPPED)).sum())
 
     return {
         "stats": [
@@ -394,6 +401,7 @@ def run_pivot_pullback():
             _stat("Declines", breadth["declines"]),
             _stat("Pivot Cross", len(df)),
             _stat("Signals", signals),
+            _stat("Trades", f"{trades}/{pivot_pullback_mod.MAX_TRADES_PER_DAY}"),
         ],
         "columns": [
             _col("Stock Name", "Stock", "symbol"),
@@ -403,7 +411,7 @@ def run_pivot_pullback():
             _col("Entry", "Entry", "num"),
             _col("SL", "SL", "num"),
             _col("Risk %", "Risk %", "pct"),
-            _col("Target", "Target (1:2)", "num"),
+            _col("Target", f"Target (1:{pivot_pullback_mod.TARGET_R_MULTIPLE})", "num"),
             _col("LTP", "LTP", "num"),
             _col("Touch Time", "Pivot Touch"),
             _col("Signal Time", "Signal"),
@@ -2994,6 +3002,200 @@ def _start_breakout_watch():
     threading.Thread(target=_breakout_watch_loop, daemon=True, name="breakout-watch").start()
 
 
+# ============================================================
+# PIVOT-WATCH BOT
+#
+# Runs the Pivot Cross Pullback scanner automatically every 5 minutes
+# from 09:30 to 15:30 IST — PIVOT_WATCH_DELAY_SECONDS after each 5-min
+# candle closes, so the candle that just closed is in the data — and
+# sends in-app + push alerts as each stock's setup moves along:
+# breadth side for the day (once, first run) -> Signal -> Triggered ->
+# Target Hit / SL Hit, or Invalidated (SL side broke before entry).
+# Each (stock, event) is sent once per day; the sent set is saved to
+# .cache/ like _auto_breakout_state so a restart doesn't resend. Events
+# older than PIVOT_WATCH_MAX_EVENT_AGE_MINUTES are recorded but not
+# sent, so starting the backend mid-day can't flood subscribers with
+# hours-old setups.
+# ============================================================
+
+PIVOT_WATCH_ENABLED = True
+PIVOT_WATCH_START = datetime.time(9, 30)
+PIVOT_WATCH_END = datetime.time(15, 30)
+PIVOT_WATCH_DELAY_SECONDS = 45
+PIVOT_WATCH_MAX_EVENT_AGE_MINUTES = 15
+PIVOT_WATCH_TICK_SECONDS = 15
+_pivot_watch_state = {"date": None, "slot": None, "breadth_sent": False, "limit_sent": False, "sent": {}}
+
+
+def _pivot_watch_state_path(date_str):
+    return os.path.join(AUTO_BREAKOUT_STATE_DIR, f"pivot_watch_state_{date_str}.json")
+
+
+def _save_pivot_watch_state():
+    state = _pivot_watch_state
+    path = _pivot_watch_state_path(state["date"])
+    try:
+        os.makedirs(AUTO_BREAKOUT_STATE_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, path)
+    except OSError as exc:
+        print(f"[pivot-watch] couldn't save state: {exc}", file=sys.stderr)
+
+
+def _start_pivot_watch_day(date_str):
+    try:
+        with open(_pivot_watch_state_path(date_str), encoding="utf-8") as fh:
+            saved = json.load(fh)
+    except (OSError, ValueError):
+        saved = None
+    if saved and saved.get("date") == date_str:
+        _pivot_watch_state.update(saved)
+    else:
+        _pivot_watch_state.update({"date": date_str, "slot": None, "breadth_sent": False, "limit_sent": False, "sent": {}})
+
+
+def _fmt_price(value):
+    return f"₹{value:,.2f}"
+
+
+def _pivot_event_message(row):
+    """(event, event_time "HH:MM", title, body) for a row's current status,
+    or None when there's nothing to alert yet (still waiting)."""
+    symbol, side, status = row["Stock Name"], row["Side"], row["Status"]
+    entry, sl, target = row.get("Entry"), row.get("SL"), row.get("Target")
+    plan = f"Entry {_fmt_price(entry)}, SL {_fmt_price(sl)}, target {_fmt_price(target)} (1:{pivot_pullback_mod.TARGET_R_MULTIPLE})." if entry is not None else ""
+    if status == "Signal":
+        candle, where, verb = ("Green", "above", "Buy above") if side == "BUY" else ("Red", "below", "Sell below")
+        return (
+            "signal", row["Signal Time"],
+            f"{'🟢' if side == 'BUY' else '🔴'} Pivot {side} setup — {symbol}",
+            f"{candle} 5-min candle closed {where} pivot {_fmt_price(row['Pivot'])} at {row['Signal Time']} after the pullback. "
+            f"{verb} {_fmt_price(entry)}, SL {_fmt_price(sl)} (risk {row['Risk %']}%), target {_fmt_price(target)} (1:{pivot_pullback_mod.TARGET_R_MULTIPLE}).",
+        )
+    if status == "Triggered":
+        return (
+            "triggered", row["Trigger Time"],
+            f"🔔 Pivot {side} entry triggered — {symbol}",
+            f"{symbol} crossed the entry at {row['Trigger Time']}. {plan}",
+        )
+    if status == "Target Hit":
+        return (
+            "target", row["Exit Time"],
+            f"🚀 {symbol} hit 1:{pivot_pullback_mod.TARGET_R_MULTIPLE} target",
+            f"Pivot {side} trade reached the target {_fmt_price(target)} at {row['Exit Time']}. {plan}",
+        )
+    if status == "SL Hit":
+        return (
+            "sl", row["Exit Time"],
+            f"⛔ Stop-loss hit — {symbol}",
+            f"Pivot {side} trade hit the stop-loss {_fmt_price(sl)} at {row['Exit Time']}. {plan}",
+        )
+    if status == "Expired" and entry is not None:
+        return (
+            "expired", row["Exit Time"],
+            f"⌛ Pivot setup expired — {symbol}",
+            f"Entry {_fmt_price(entry)} wasn't triggered by {pivot_pullback_mod.ENTRY_CUTOFF} — no trade today. Cancel any pending order.",
+        )
+    if status == "Invalidated":
+        return (
+            "invalidated", row["Exit Time"],
+            f"❌ Pivot setup cancelled — {symbol}",
+            f"Price broke the SL side {_fmt_price(sl)} at {row['Exit Time']} before reaching the entry {_fmt_price(entry)} — no trade. Cancel any pending order.",
+        )
+    return None
+
+
+def _pivot_notify(title, body, symbols):
+    try:
+        _send_campaign_notification(
+            title, body, ALERT_MONITOR_AUDIENCE, entry_symbols=symbols,
+            channels=("in_app", "push") if fcm_connector.is_configured() else ("in_app",),
+            sent_by="pivot-watch-bot",
+        )
+    except Exception as exc:
+        print(f"[pivot-watch] notify failed ({title}): {exc}", file=sys.stderr)
+
+
+def _pivot_watch_once(now):
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups()
+
+    if not df.empty:
+        payload = _pivot_pullback_payload(df, breadth)
+        cache.get_or_fetch(_scanner_cache_key("pivot_pullback"), SCAN_CACHE_TTL_SECONDS, lambda: payload, force=True)
+
+    state = _pivot_watch_state
+    if not state["breadth_sent"] and (breadth["advances"] or breadth["declines"]):
+        side = breadth["side"]
+        _pivot_notify(
+            f"📊 Market breadth: {side} side today",
+            f"{breadth['advances']} advancing / {breadth['declines']} declining Nifty stocks at 09:30 — the Pivot "
+            f"Cross Pullback scanner will look for {side} setups only today.",
+            [],
+        )
+        state["breadth_sent"] = True
+
+    oldest = (now - datetime.timedelta(minutes=PIVOT_WATCH_MAX_EVENT_AGE_MINUTES)).strftime("%H:%M")
+    rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+    for row in rows:
+        event = _pivot_event_message(row)
+        if event is None:
+            continue
+        name, event_time, title, body = event
+        sent = state["sent"].setdefault(row["Stock Name"], [])
+        if name in sent:
+            continue
+        sent.append(name)
+        if event_time and event_time >= oldest:
+            _pivot_notify(title, body, [row["Stock Name"]])
+        else:
+            print(f"[pivot-watch] {row['Stock Name']} {name} at {event_time} too old - recorded, not sent", file=sys.stderr)
+
+    if breadth.get("limit_time") and not state.get("limit_sent"):
+        # Stocks whose setup was already alerted but will now never be
+        # taken — anyone holding a pending order on them should cancel it.
+        dropped = [
+            r["Stock Name"] for r in rows
+            if r["Status"] == pivot_pullback_mod.SKIPPED and "signal" in state["sent"].get(r["Stock Name"], [])
+        ]
+        cancel = f" Cancel pending pivot orders on: {', '.join(dropped)}." if dropped else ""
+        _pivot_notify(
+            f"✅ {pivot_pullback_mod.MAX_TRADES_PER_DAY} pivot trades taken today",
+            f"Daily limit reached at {breadth['limit_time']} — no more Pivot Cross Pullback setups today; "
+            f"the {pivot_pullback_mod.MAX_TRADES_PER_DAY} open trades keep getting target/SL alerts.{cancel}",
+            dropped,
+        )
+        state["limit_sent"] = True
+    _save_pivot_watch_state()
+    print(f"[pivot-watch] {now:%H:%M} {breadth['side']} side, {len(df)} pivot crosses", file=sys.stderr)
+
+
+def _pivot_watch_loop():
+    while True:
+        try:
+            now = datetime.datetime.now(chart_connector.IST)
+            # Latest 5-min candle close that's at least the delay old.
+            ready = now - datetime.timedelta(seconds=PIVOT_WATCH_DELAY_SECONDS)
+            slot = ready.replace(minute=ready.minute - ready.minute % 5, second=0, microsecond=0)
+            if now.weekday() < 5 and PIVOT_WATCH_START <= slot.time() <= PIVOT_WATCH_END:
+                date_str = now.strftime("%Y-%m-%d")
+                if _pivot_watch_state["date"] != date_str:
+                    _start_pivot_watch_day(date_str)
+                slot_str = slot.strftime("%H:%M")
+                if _pivot_watch_state["slot"] != slot_str:
+                    _pivot_watch_state["slot"] = slot_str
+                    _pivot_watch_once(now)
+        except Exception as exc:
+            print(f"[pivot-watch] cycle failed: {exc}", file=sys.stderr)
+        time.sleep(PIVOT_WATCH_TICK_SECONDS)
+
+
+def _start_pivot_watch():
+    if PIVOT_WATCH_ENABLED:
+        threading.Thread(target=_pivot_watch_loop, daemon=True, name="pivot-watch").start()
+
+
 def _start_mutual_funds_refresh():
     # Mutual Funds page: NAV / returns / ETF prices refreshed once per IST
     # day from AMFI + Dhan (see connectors/mutual_funds_connector.py).
@@ -3254,6 +3456,7 @@ if __name__ == "__main__":
     # starting a second monitor thread on a reloader respawn either.
     _start_alert_monitor()
     _start_breakout_watch()
+    _start_pivot_watch()
     _start_mutual_funds_refresh()
 
     # threaded=True lets the dev server actually parallelize the concurrent

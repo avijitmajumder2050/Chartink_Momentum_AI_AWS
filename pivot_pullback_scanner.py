@@ -15,23 +15,38 @@ Per stock, for one trading day (SELL is the exact mirror of BUY):
 1. Pivot = classic floor pivot from the previous session: (H + L + C) / 3.
 2. First 15 minutes (09:15-09:30, the first three 5-min candles combined)
    must CROSS the pivot: BUY open below / close above, SELL the reverse.
-3. After 09:30, wait for price to come back to the pivot: BUY a candle low
-   at or within TOUCH_TOLERANCE_PCT above it, SELL a candle high at or
-   within that tolerance below it.
+3. After 09:30, wait for price to come back to the pivot itself (no
+   tolerance): BUY a candle low at or below it, SELL a candle high at or
+   above it.
 4. From that touch candle onward, the first GREEN candle closing above the
    pivot (BUY: entry = its high, SL = its low) or RED candle closing below
-   it (SELL: entry = its low, SL = its high) is the signal.
+   it (SELL: entry = its low, SL = its high) is the signal. The SL sits
+   SL_BUFFER_PCT beyond that candle (BUY below its low, SELL above its
+   high) so a wick just past the candle doesn't stop the trade out.
 
 Later candles then decide the status: Signal (entry not yet hit) ->
-Triggered (price crossed the entry) -> SL Hit / Target Hit (1:2 R:R,
-informational only); Invalidated if the SL side breaks before entry. Only
+Triggered (price crossed the entry) -> SL Hit / Target Hit (1:5 R:R);
+Invalidated if the SL side breaks before entry. Only
 fully-closed 5-min candles are used, so a candle still forming is never
 mistaken for a signal.
 
-One Dhan intraday call per stock (5-min candles from a week back through
-now) gives both the previous session's HLC and today's candles. That
-endpoint is rate-limited (DH-904), so calls are throttled like
-first_minute_movers.py.
+Entries only count until ENTRY_CUTOFF (10:15): the trigger must happen in
+a candle starting before it. After that, a setup not yet triggered (or
+still waiting) is "Expired" and no new setups are looked for; trades
+already triggered keep being tracked to SL / target.
+
+At most MAX_TRADES_PER_DAY trades a day, across all stocks: the first ones
+to actually trigger (same candle -> smaller Risk % first). Once that many
+have triggered, every other stock - pending signals included - becomes
+"Skipped (limit)". Setups cancelled before then don't use a slot.
+
+Per stock: one Dhan intraday call for today's 5-min candles, plus the
+previous session's high/low/close from Dhan's DAILY candles (cached for
+the day). Not from the 5-min candles: Dhan's intraday data stops at the
+15:10 candle and has no closing-auction price, so a pivot built from it
+was wrong whenever the last 20 minutes made the high/low (DLF on 30 Sep:
+real pivot 667.00, 5-min-based 664.03). The intraday endpoint is
+rate-limited (DH-904), so calls are throttled like first_minute_movers.py.
 """
 
 import argparse
@@ -56,11 +71,10 @@ AWS_REGION = "ap-south-1"
 
 INTERVAL_MINUTES = 5
 FIRST_WINDOW_CANDLES = 3  # 3 x 5 min = the first 15 minutes
-# "Back to pivot" — the candle may stop this far short of the pivot (as a
-# % of pivot) and still count as a touch; reaching or crossing it always
-# counts.
-TOUCH_TOLERANCE_PCT = 0.10
-TARGET_R_MULTIPLE = 2
+TARGET_R_MULTIPLE = 5
+SL_BUFFER_PCT = 0.30
+MAX_TRADES_PER_DAY = 3
+ENTRY_CUTOFF = "10:15"
 
 MAX_WORKERS = 3
 SUBMIT_STAGGER_SECONDS = 0.4
@@ -75,37 +89,33 @@ def load_universe():
     return [(str(r["Stock Name"]).strip().upper(), int(r["Instrument ID"])) for _, r in df.iterrows()]
 
 
-def split_session(df, date_str, now=None):
-    """-> (prev_day candles, today's closed candles), or None if either is
-    missing or the first 15 minutes aren't complete yet. `now` (IST
-    datetime) drops the still-forming candle; None = all candles closed."""
-    day = df["time"].dt.strftime("%Y-%m-%d")
-    prior = df[day < date_str]
-    today = df[day == date_str].reset_index(drop=True)
+def today_candles(df, date_str, now=None):
+    """`date_str`'s closed 5-min candles, or None if the first 15 minutes
+    aren't complete yet. `now` (IST datetime) drops the still-forming
+    candle; None = all candles closed."""
+    today = df[df["time"].dt.strftime("%Y-%m-%d") == date_str].reset_index(drop=True)
     if now is not None and not today.empty:
         closed = today["time"] + pd.Timedelta(minutes=INTERVAL_MINUTES) <= now
         today = today[closed].reset_index(drop=True)
-    if prior.empty or len(today) < FIRST_WINDOW_CANDLES:
-        return None
-    prev_day = prior[day[prior.index] == day[prior.index].iloc[-1]]
-    return prev_day, today
+    return today if len(today) >= FIRST_WINDOW_CANDLES else None
 
 
-def breadth_move(df, date_str, now=None):
+def breadth_move(df, prev, date_str, now=None):
     """+1 advance / -1 decline / 0 unchanged at the end of the first 15
-    minutes vs the previous session close, or None without data."""
-    parts = split_session(df, date_str, now)
-    if parts is None:
+    minutes vs the previous session's official close, or None without
+    data. `prev` = {"high", "low", "close"} of the previous session."""
+    today = today_candles(df, date_str, now)
+    if today is None or prev is None:
         return None
-    prev_day, today = parts
-    prev_close = prev_day["close"].iloc[-1]
+    prev_close = prev["close"]
     close15 = today["close"].iloc[FIRST_WINDOW_CANDLES - 1]
     return int(close15 > prev_close) - int(close15 < prev_close)
 
 
-def compute_signal(df, date_str, side="BUY", now=None):
-    """Pure function: 5-min candles (time [IST], open, high, low, close)
-    spanning at least the previous session and `date_str` -> result dict,
+def compute_signal(df, prev, date_str, side="BUY", now=None):
+    """Pure function: `date_str`'s 5-min candles (time [IST], open, high,
+    low, close) + the previous session's daily {"high", "low", "close"}
+    -> result dict,
     or None if the stock doesn't pass the first-15-minute pivot cross for
     `side` ("BUY" or "SELL").
 
@@ -113,21 +123,19 @@ def compute_signal(df, date_str, side="BUY", now=None):
     comparison flips: cross below, red candle, entry at its low, SL at its
     high) — one code path for both sides, so they can't drift apart.
     """
-    parts = split_session(df, date_str, now)
-    if parts is None:
+    today = today_candles(df, date_str, now)
+    if today is None or prev is None:
         return None
-    prev_day, today = parts
 
     sign = 1 if side == "BUY" else -1
+    prev_high, prev_low, prev_close = prev["high"], prev["low"], prev["close"]
     if sign < 0:
-        prev_day = prev_day.assign(high=-prev_day["low"], low=-prev_day["high"], close=-prev_day["close"])
+        prev_high, prev_low, prev_close = -prev["low"], -prev["high"], -prev["close"]
         today = today.assign(open=-today["open"], high=-today["low"], low=-today["high"], close=-today["close"])
 
     def px(value):  # back to real prices for output
         return round(float(sign * value), 2)
 
-    prev_high, prev_low = prev_day["high"].max(), prev_day["low"].min()
-    prev_close = prev_day["close"].iloc[-1]
     pivot = (prev_high + prev_low + prev_close) / 3
 
     first = today.iloc[:FIRST_WINDOW_CANDLES]
@@ -156,21 +164,30 @@ def compute_signal(df, date_str, side="BUY", now=None):
     }
 
     after = today.iloc[FIRST_WINDOW_CANDLES:].reset_index(drop=True)
-    touch_level = pivot + abs(pivot) * TOUCH_TOLERANCE_PCT / 100
-    touches = after.index[after["low"] <= touch_level]
+    last_end = (today["time"].iloc[-1] + pd.Timedelta(minutes=INTERVAL_MINUTES)).strftime("%H:%M")
+    cutoff_passed = last_end >= ENTRY_CUTOFF
+    # Setup search (touch + signal candle) only before the cutoff — a
+    # signal at/after it could never trigger in time.
+    early = after[after["time"].dt.strftime("%H:%M") < ENTRY_CUTOFF]
+    touches = early.index[early["low"] <= pivot]
     if len(touches) == 0:
+        if cutoff_passed:
+            result["Status"] = "Expired"
         return result
     touch_idx = touches[0]
     result["Touch Time"] = after.at[touch_idx, "time"].strftime("%H:%M")
     result["Status"] = "Waiting Green Candle" if sign > 0 else "Waiting Red Candle"
 
-    candidates = after.iloc[touch_idx:]
+    candidates = early.loc[touch_idx:]
     candidates = candidates[(candidates["close"] > candidates["open"]) & (candidates["close"] > pivot)]
     if candidates.empty:
+        if cutoff_passed:
+            result["Status"] = "Expired"
         return result
     sig_idx = candidates.index[0]
     sig = after.loc[sig_idx]
     entry, sl = float(sig["high"]), float(sig["low"])
+    sl -= abs(sl) * SL_BUFFER_PCT / 100  # below the low (BUY) / above the high (SELL, negated)
     risk = entry - sl
     target = entry + TARGET_R_MULTIPLE * risk
     result.update({
@@ -187,6 +204,9 @@ def compute_signal(df, date_str, side="BUY", now=None):
     for _, c in after.iloc[sig_idx + 1:].iterrows():
         t = c["time"].strftime("%H:%M")
         if result["Status"] == "Signal":
+            if t >= ENTRY_CUTOFF:
+                result["Status"], result["Exit Time"] = "Expired", ENTRY_CUTOFF
+                break
             if c["high"] > entry:
                 result["Status"], result["Trigger Time"] = "Triggered", t
                 if c["low"] <= sl:  # same candle: assume the worse outcome
@@ -202,24 +222,69 @@ def compute_signal(df, date_str, side="BUY", now=None):
             if c["high"] >= target:
                 result["Status"], result["Exit Time"] = "Target Hit", t
                 break
+    if result["Status"] == "Signal" and cutoff_passed:
+        result["Status"], result["Exit Time"] = "Expired", ENTRY_CUTOFF
     return result
 
 
+def previous_session(security_id, date_str):
+    """{"high", "low", "close"} of the last daily candle before `date_str`,
+    or None. The range is fixed per date, so get_historical_daily's cache
+    serves every 5-minute run of the day from one call per stock."""
+    start = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=15)).strftime("%Y-%m-%d")
+    daily = dhan_connector.get_historical_daily(security_id, start, date_str)
+    if daily is None or daily.empty:
+        return None
+    prior = daily[daily["date"] < date_str]
+    if prior.empty:
+        return None
+    last = prior.iloc[-1]
+    return {"high": float(last["high"]), "low": float(last["low"]), "close": float(last["close"])}
+
+
 def _fetch_one(symbol, security_id, date_str):
-    start = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    """-> (today's 5-min candles, previous session dict), or None."""
     try:
-        return dhan_connector.get_intraday_candles(
-            security_id, f"{start} 09:15:00", f"{date_str} 15:30:00", interval=INTERVAL_MINUTES
+        prev = previous_session(security_id, date_str)
+        df = dhan_connector.get_intraday_candles(
+            # From 09:00, not 09:15: Dhan treats the start as exclusive and
+            # would drop the 09:15 candle.
+            security_id, f"{date_str} 09:00:00", f"{date_str} 15:30:00", interval=INTERVAL_MINUTES
         )
     except Exception as exc:
         logger.warning("%s skipped - %s", symbol, exc)
         return None
+    if prev is None or df.empty:
+        return None
+    return df, prev
 
 
 STATUS_ORDER = [
     "Triggered", "Signal", "Target Hit", "SL Hit", "Invalidated",
-    "Waiting Green Candle", "Waiting Red Candle", "Waiting Pullback",
+    "Waiting Green Candle", "Waiting Red Candle", "Waiting Pullback", "Expired", "Skipped (limit)",
 ]
+SKIPPED = "Skipped (limit)"
+
+
+def apply_trade_limit(df, max_trades=MAX_TRADES_PER_DAY):
+    """Keep only the first `max_trades` triggered trades of the day; mark
+    every other stock that could still have traded after that point
+    "Skipped (limit)". -> (df, limit_time "HH:MM" or None)."""
+    if df.empty or "Trigger Time" not in df:
+        return df, None
+    triggered = df[df["Trigger Time"].notna()].sort_values(["Trigger Time", "Risk %"])
+    if len(triggered) < max_trades:
+        return df, None
+    kept = set(triggered.index[:max_trades])
+    limit_time = triggered["Trigger Time"].iloc[max_trades - 1]
+    df = df.copy()
+    for i, row in df.iterrows():
+        if i in kept:
+            continue
+        cancelled_before = row["Status"] == "Invalidated" and row["Exit Time"] <= limit_time
+        if not cancelled_before:
+            df.at[i, "Status"] = SKIPPED
+    return df, limit_time
 
 
 def get_pivot_pullback_setups(date_str=None, save=True):
@@ -240,11 +305,11 @@ def get_pivot_pullback_setups(date_str=None, save=True):
             futures.append((symbol, sid, pool.submit(_fetch_one, symbol, sid, date_str)))
             time.sleep(SUBMIT_STAGGER_SECONDS)
         for symbol, sid, future in futures:
-            df = future.result()
-            if df is not None and not df.empty:
-                candles[(symbol, sid)] = df
+            fetched = future.result()
+            if fetched is not None:
+                candles[(symbol, sid)] = fetched
 
-    moves = [m for m in (breadth_move(df, date_str, cutoff) for df in candles.values()) if m is not None]
+    moves = [m for m in (breadth_move(df, prev, date_str, cutoff) for df, prev in candles.values()) if m is not None]
     advances, declines = moves.count(1), moves.count(-1)
     side = "BUY" if advances > declines else "SELL"
     breadth = {"advances": advances, "declines": declines, "unchanged": moves.count(0), "side": side}
@@ -252,12 +317,13 @@ def get_pivot_pullback_setups(date_str=None, save=True):
 
     rows = []
     if moves:
-        for (symbol, sid), df in candles.items():
-            result = compute_signal(df, date_str, side, cutoff)
+        for (symbol, sid), (df, prev) in candles.items():
+            result = compute_signal(df, prev, date_str, side, cutoff)
             if result is not None:
                 rows.append({"Stock Name": symbol, "Security ID": sid, **result})
 
-    df = pd.DataFrame(rows)
+    df, limit_time = apply_trade_limit(pd.DataFrame(rows))
+    breadth["limit_time"] = limit_time
     if not df.empty:
         df["_order"] = df["Status"].map(STATUS_ORDER.index)
         df = df.sort_values(["_order", "Signal Time", "Stock Name"]).drop(columns="_order").reset_index(drop=True)
