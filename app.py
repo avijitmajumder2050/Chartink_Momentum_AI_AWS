@@ -27,6 +27,7 @@ import chartink_daily_hammer as hammer_mod
 import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
+import pivot_pullback_scanner as pivot_pullback_mod
 import mock_data
 from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, mutual_funds_connector, news_connector, order_intent_connector, razorpay_connector, secrets, sector_connector, stock_screener_ai, subscription_connector
 from connectors.format_utils import pct_str
@@ -373,6 +374,48 @@ def run_first_minute_movers():
     }
 
 
+def run_pivot_pullback():
+
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups()
+
+    if df.empty:
+        raise RuntimeError(
+            f"No {breadth['side']}-side pivot crosses (breadth {breadth['advances']} adv / "
+            f"{breadth['declines']} dec) - the first 15 minutes end at 09:30 IST"
+        )
+
+    rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+    signals = int(df["Entry"].notna().sum())
+
+    return {
+        "stats": [
+            _stat("Side", breadth["side"]),
+            _stat("Advances", breadth["advances"]),
+            _stat("Declines", breadth["declines"]),
+            _stat("Pivot Cross", len(df)),
+            _stat("Signals", signals),
+        ],
+        "columns": [
+            _col("Stock Name", "Stock", "symbol"),
+            _col("Side", "Side"),
+            _col("Status", "Status"),
+            _col("Pivot", "Pivot", "num"),
+            _col("Entry", "Entry", "num"),
+            _col("SL", "SL", "num"),
+            _col("Risk %", "Risk %", "pct"),
+            _col("Target", "Target (1:2)", "num"),
+            _col("LTP", "LTP", "num"),
+            _col("Touch Time", "Pivot Touch"),
+            _col("Signal Time", "Signal"),
+            _col("Trigger Time", "Triggered"),
+            _col("Exit Time", "Exit"),
+            _col("15m Open", "15m Open", "num"),
+            _col("15m Close", "15m Close", "num"),
+        ],
+        "rows": rows,
+    }
+
+
 SCANNERS = {
     "stoch": {
         "name": "Stochastic Crossover",
@@ -412,6 +455,19 @@ SCANNERS = {
             "traded names, not a full-day scan"
         ),
         "run": run_first_minute_movers,
+    },
+    "pivot_pullback": {
+        "name": "Pivot Cross Pullback (Buy/Sell by Breadth)",
+        "description": (
+            "Market breadth of the Nifty stocks (uploads/nifty_mapping."
+            "csv) at 09:30 picks the side: more advances -> BUY, otherwise "
+            "SELL. BUY: first 15 minutes cross above the daily pivot, "
+            "pull back to it, first green 5-min candle closing above it - "
+            "entry above its high, SL its low. SELL is the mirror: cross "
+            "below, pull back up, red candle - entry below its low, SL "
+            "its high"
+        ),
+        "run": run_pivot_pullback,
     },
 }
 

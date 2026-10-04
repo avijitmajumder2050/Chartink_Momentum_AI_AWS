@@ -204,6 +204,15 @@ def _fetch_intraday_minute(security_id, from_date, to_date, interval=1, max_retr
     })
 
 
+def get_intraday_candles(security_id, from_date, to_date, interval=5):
+    """Uncached intraday candles (DataFrame: time [IST], open, high, low,
+    close, volume) between "YYYY-MM-DD HH:MM:SS" bounds — for scanners
+    that walk the whole session candle by candle (pivot_pullback_scanner.
+    py). Uncached on purpose: the session is still forming while it's
+    scanned, and the scanner's own result is already cached by app.py."""
+    return _fetch_intraday_minute(security_id, from_date, to_date, interval=interval)
+
+
 def _row_to_candle(row):
     return {
         "time": row["time"].strftime("%H:%M"),
