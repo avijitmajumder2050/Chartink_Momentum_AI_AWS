@@ -78,6 +78,7 @@ ENTRY_CUTOFF = "10:15"
 
 MAX_WORKERS = 3
 SUBMIT_STAGGER_SECONDS = 0.4
+RETRY_PASS_DELAY_SECONDS = 2
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +309,19 @@ def get_pivot_pullback_setups(date_str=None, save=True):
             fetched = future.result()
             if fetched is not None:
                 candles[(symbol, sid)] = fetched
+
+    # Stocks that still hit Dhan's rate limit after _fetch_one's own
+    # retries (seen live: ~4 of 100 when the breakout bot is also calling
+    # Dhan) get one slower, one-at-a-time pass — a skipped stock both
+    # misses its signals and skews the breadth count.
+    missed = [(symbol, sid) for symbol, sid in universe if (symbol, sid) not in candles]
+    for symbol, sid in missed:
+        time.sleep(RETRY_PASS_DELAY_SECONDS)
+        fetched = _fetch_one(symbol, sid, date_str)
+        if fetched is not None:
+            candles[(symbol, sid)] = fetched
+    if missed:
+        logger.info("Retry pass recovered %s of %s skipped stocks", sum(k in candles for k in missed), len(missed))
 
     moves = [m for m in (breadth_move(df, prev, date_str, cutoff) for df, prev in candles.values()) if m is not None]
     advances, declines = moves.count(1), moves.count(-1)
