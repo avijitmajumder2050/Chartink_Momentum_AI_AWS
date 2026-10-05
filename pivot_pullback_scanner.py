@@ -36,7 +36,9 @@ still waiting) is "Expired" and no new setups are looked for; trades
 already triggered keep being tracked to SL / target.
 
 At most MAX_TRADES_PER_DAY trades a day, across all stocks: the first ones
-to actually trigger (same candle -> smaller Risk % first). Once that many
+to actually trigger (same candle -> highest first-15-min traded value
+first; over 21 Sep - 5 Oct 2026 that beat smaller-Risk%-first, +6.2R vs
++3.9R, picking ADANIPOWER over NESTLEIND's SL hit on 5 Oct). Once that many
 have triggered, every other stock - pending signals included - becomes
 "Skipped (limit)". Setups cancelled before then don't use a slot.
 
@@ -73,7 +75,7 @@ INTERVAL_MINUTES = 5
 FIRST_WINDOW_CANDLES = 3  # 3 x 5 min = the first 15 minutes
 TARGET_R_MULTIPLE = 5
 SL_BUFFER_PCT = 0.30
-MAX_TRADES_PER_DAY = 3
+MAX_TRADES_PER_DAY = 1
 ENTRY_CUTOFF = "10:15"
 
 MAX_WORKERS = 3
@@ -128,6 +130,12 @@ def compute_signal(df, prev, date_str, side="BUY", now=None):
     if today is None or prev is None:
         return None
 
+    # Traded value (volume x close) of the first 15 minutes, in crore —
+    # the same-candle tiebreak in apply_trade_limit. Taken before the
+    # SELL-side price negation below.
+    first_real = today.iloc[:FIRST_WINDOW_CANDLES]
+    value15_cr = round(float((first_real["volume"] * first_real["close"]).sum()) / 1e7, 2)
+
     sign = 1 if side == "BUY" else -1
     prev_high, prev_low, prev_close = prev["high"], prev["low"], prev["close"]
     if sign < 0:
@@ -152,6 +160,7 @@ def compute_signal(df, prev, date_str, side="BUY", now=None):
         "S1": px(level_down if sign > 0 else level_up),
         "15m Open": px(open15),
         "15m Close": px(close15),
+        "15m Value Cr": value15_cr,
         "Status": "Waiting Pullback",
         "Touch Time": None,
         "Signal Time": None,
@@ -273,7 +282,7 @@ def apply_trade_limit(df, max_trades=MAX_TRADES_PER_DAY):
     "Skipped (limit)". -> (df, limit_time "HH:MM" or None)."""
     if df.empty or "Trigger Time" not in df:
         return df, None
-    triggered = df[df["Trigger Time"].notna()].sort_values(["Trigger Time", "Risk %"])
+    triggered = df[df["Trigger Time"].notna()].sort_values(["Trigger Time", "15m Value Cr"], ascending=[True, False])
     if len(triggered) < max_trades:
         return df, None
     kept = set(triggered.index[:max_trades])

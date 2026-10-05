@@ -419,6 +419,7 @@ def _pivot_pullback_payload(df, breadth):
             _col("Exit Time", "Exit"),
             _col("15m Open", "15m Open", "num"),
             _col("15m Close", "15m Close", "num"),
+            _col("15m Value Cr", "15m Value (₹ cr)", "num"),
         ],
         "rows": rows,
     }
@@ -3192,9 +3193,9 @@ def _pivot_watch_once(now):
         ]
         cancel = f" Cancel pending pivot orders on: {', '.join(dropped)}." if dropped else ""
         _pivot_notify(
-            f"✅ {pivot_pullback_mod.MAX_TRADES_PER_DAY} pivot trades taken today",
+            f"✅ Pivot trade limit reached ({pivot_pullback_mod.MAX_TRADES_PER_DAY}) today",
             f"Daily limit reached at {breadth['limit_time']} — no more Pivot Cross Pullback setups today; "
-            f"the {pivot_pullback_mod.MAX_TRADES_PER_DAY} open trades keep getting target/SL alerts.{cancel}",
+            f"open trades keep getting target/SL alerts.{cancel}",
             dropped,
         )
         state["limit_sent"] = True
