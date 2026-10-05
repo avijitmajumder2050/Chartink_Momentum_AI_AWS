@@ -41,6 +41,9 @@ highest first-15-min traded value (over 21 Sep - 5 Oct 2026 that beat
 smaller-Risk%-first, +6.2R vs +3.9R: ADANIPOWER, not NESTLEIND's SL hit,
 on 5 Oct). If the pick is Invalidated before entry, the next setup still
 pending at that point takes over. Every other stock is "Not picked".
+Breadth is checked again at each signal candle's close (every stock's
+close then vs its previous close): a setup is only picked if the day's
+side still leads at that moment.
 
 Per stock: one Dhan intraday call for today's 5-min candles, plus the
 previous session's high/low/close from Dhan's DAILY candles (cached for
@@ -112,6 +115,22 @@ def breadth_move(df, prev, date_str, now=None):
     prev_close = prev["close"]
     close15 = today["close"].iloc[FIRST_WINDOW_CANDLES - 1]
     return int(close15 > prev_close) - int(close15 < prev_close)
+
+
+def breadth_by_candle(candles, date_str, now=None):
+    """{"HH:MM": (advances, declines)} for every closed 5-min candle of
+    `date_str` — each stock's candle close vs its previous session close,
+    the same comparison as the 09:30 breadth_move. `candles` = iterable of
+    (5-min df, prev session dict)."""
+    counts = {}
+    for df, prev in candles:
+        today = today_candles(df, date_str, now)
+        if today is None or prev is None:
+            continue
+        for t, close in zip(today["time"].dt.strftime("%H:%M"), today["close"]):
+            adv, dec = counts.get(t, (0, 0))
+            counts[t] = (adv + (close > prev["close"]), dec + (close < prev["close"]))
+    return counts
 
 
 def compute_signal(df, prev, date_str, side="BUY", now=None):
@@ -287,6 +306,10 @@ def pick_daily_trade(df, locked=()):
         return df, []
     locked = list(locked)
     sig = df[df["Signal Time"].notna()]
+    if "Breadth OK" in df:
+        # A setup whose signal candle closed with breadth against the
+        # day's side isn't tradeable (already-alerted picks stay).
+        sig = sig[sig["Breadth OK"].fillna(False).astype(bool) | sig["Stock Name"].isin(locked)]
     order = sorted(sig.index, key=lambda i: (
         locked.index(sig.at[i, "Stock Name"]) if sig.at[i, "Stock Name"] in locked else len(locked),
         sig.at[i, "Signal Time"],
@@ -356,6 +379,15 @@ def get_pivot_pullback_setups(date_str=None, save=True, locked_picks=()):
             result = compute_signal(df, prev, date_str, side, cutoff)
             if result is not None:
                 rows.append({"Stock Name": symbol, "Security ID": sid, **result})
+
+    # Breadth is re-checked when each signal candle closes: the day's
+    # side (fixed at 09:30) must still lead then, or that setup is skipped.
+    by_candle = breadth_by_candle(candles.values(), date_str, cutoff)
+    for row in rows:
+        if row["Signal Time"]:
+            adv, dec = by_candle.get(row["Signal Time"], (0, 0))
+            row["Signal Breadth"] = f"{adv} adv / {dec} dec"
+            row["Breadth OK"] = (adv > dec) == (side == "BUY")
 
     df, picks = pick_daily_trade(pd.DataFrame(rows), locked_picks)
     breadth["picks"] = picks

@@ -421,6 +421,7 @@ def _pivot_pullback_payload(df, breadth):
             _col("LTP", "LTP", "num"),
             _col("Touch Time", "Pivot Touch"),
             _col("Signal Time", "Signal"),
+            _col("Signal Breadth", "Breadth @ Signal"),
             _col("Trigger Time", "Triggered"),
             _col("Exit Time", "Exit"),
             _col("15m Open", "15m Open", "num"),
