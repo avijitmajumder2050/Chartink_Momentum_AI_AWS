@@ -374,8 +374,15 @@ def run_first_minute_movers():
     }
 
 
+def _pivot_locked_picks():
+    """Today's pivot picks the watch bot has already alerted — passed back
+    in so a re-run can't swap them (see pivot_pullback_mod.pick_daily_trade)."""
+    today = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
+    return _pivot_watch_state.get("picks", []) if _pivot_watch_state["date"] == today else []
+
+
 def run_pivot_pullback():
-    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups()
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks())
     return _pivot_pullback_payload(df, breadth)
 
 
@@ -392,7 +399,6 @@ def _pivot_pullback_payload(df, breadth):
 
     rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
     signals = int(df["Entry"].notna().sum())
-    trades = int((df["Trigger Time"].notna() & (df["Status"] != pivot_pullback_mod.SKIPPED)).sum())
 
     return {
         "stats": [
@@ -401,7 +407,7 @@ def _pivot_pullback_payload(df, breadth):
             _stat("Declines", breadth["declines"]),
             _stat("Pivot Cross", len(df)),
             _stat("Signals", signals),
-            _stat("Trades", f"{trades}/{pivot_pullback_mod.MAX_TRADES_PER_DAY}"),
+            _stat("Today's Trade", (breadth.get("picks") or ["—"])[-1]),
         ],
         "columns": [
             _col("Stock Name", "Stock", "symbol"),
@@ -3040,8 +3046,9 @@ def _start_breakout_watch():
 # Runs the Pivot Cross Pullback scanner automatically every 5 minutes
 # from 09:30 to 15:30 IST — PIVOT_WATCH_DELAY_SECONDS after each 5-min
 # candle closes, so the candle that just closed is in the data — and
-# sends in-app + push alerts as each stock's setup moves along:
-# breadth side for the day (once, first run) -> Signal -> Triggered ->
+# sends in-app + push alerts for the day's ONE picked trade (see
+# pivot_pullback_mod.pick_daily_trade; other stocks are "Not picked"
+# and never alerted): breadth side (once, first run) -> Signal -> Triggered ->
 # Target Hit / SL Hit, or Invalidated (SL side broke before entry).
 # Each (stock, event) is sent once per day; the sent set is saved to
 # .cache/ like _auto_breakout_state so a restart doesn't resend. Events
@@ -3056,7 +3063,7 @@ PIVOT_WATCH_END = datetime.time(15, 30)
 PIVOT_WATCH_DELAY_SECONDS = 45
 PIVOT_WATCH_MAX_EVENT_AGE_MINUTES = 15
 PIVOT_WATCH_TICK_SECONDS = 15
-_pivot_watch_state = {"date": None, "slot": None, "breadth_sent": False, "limit_sent": False, "sent": {}}
+_pivot_watch_state = {"date": None, "slot": None, "breadth_sent": False, "picks": [], "sent": {}}
 
 
 def _pivot_watch_state_path(date_str):
@@ -3085,7 +3092,7 @@ def _start_pivot_watch_day(date_str):
     if saved and saved.get("date") == date_str:
         _pivot_watch_state.update(saved)
     else:
-        _pivot_watch_state.update({"date": date_str, "slot": None, "breadth_sent": False, "limit_sent": False, "sent": {}})
+        _pivot_watch_state.update({"date": date_str, "slot": None, "breadth_sent": False, "picks": [], "sent": {}})
 
 
 def _fmt_price(value):
@@ -3151,7 +3158,8 @@ def _pivot_notify(title, body, symbols):
 
 
 def _pivot_watch_once(now):
-    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups()
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks())
+    _pivot_watch_state["picks"] = breadth["picks"]
 
     if not df.empty:
         payload = _pivot_pullback_payload(df, breadth)
@@ -3184,21 +3192,6 @@ def _pivot_watch_once(now):
         else:
             print(f"[pivot-watch] {row['Stock Name']} {name} at {event_time} too old - recorded, not sent", file=sys.stderr)
 
-    if breadth.get("limit_time") and not state.get("limit_sent"):
-        # Stocks whose setup was already alerted but will now never be
-        # taken — anyone holding a pending order on them should cancel it.
-        dropped = [
-            r["Stock Name"] for r in rows
-            if r["Status"] == pivot_pullback_mod.SKIPPED and "signal" in state["sent"].get(r["Stock Name"], [])
-        ]
-        cancel = f" Cancel pending pivot orders on: {', '.join(dropped)}." if dropped else ""
-        _pivot_notify(
-            f"✅ Pivot trade limit reached ({pivot_pullback_mod.MAX_TRADES_PER_DAY}) today",
-            f"Daily limit reached at {breadth['limit_time']} — no more Pivot Cross Pullback setups today; "
-            f"open trades keep getting target/SL alerts.{cancel}",
-            dropped,
-        )
-        state["limit_sent"] = True
     _save_pivot_watch_state()
     print(f"[pivot-watch] {now:%H:%M} {breadth['side']} side, {len(df)} pivot crosses", file=sys.stderr)
 

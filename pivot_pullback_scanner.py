@@ -35,12 +35,12 @@ a candle starting before it. After that, a setup not yet triggered (or
 still waiting) is "Expired" and no new setups are looked for; trades
 already triggered keep being tracked to SL / target.
 
-At most MAX_TRADES_PER_DAY trades a day, across all stocks: the first ones
-to actually trigger (same candle -> highest first-15-min traded value
-first; over 21 Sep - 5 Oct 2026 that beat smaller-Risk%-first, +6.2R vs
-+3.9R, picking ADANIPOWER over NESTLEIND's SL hit on 5 Oct). Once that many
-have triggered, every other stock - pending signals included - becomes
-"Skipped (limit)". Setups cancelled before then don't use a slot.
+One trade a day, picked when its signal candle closes (so an order can
+be placed before it triggers): the earliest signal, same candle ->
+highest first-15-min traded value (over 21 Sep - 5 Oct 2026 that beat
+smaller-Risk%-first, +6.2R vs +3.9R: ADANIPOWER, not NESTLEIND's SL hit,
+on 5 Oct). If the pick is Invalidated before entry, the next setup still
+pending at that point takes over. Every other stock is "Not picked".
 
 Per stock: one Dhan intraday call for today's 5-min candles, plus the
 previous session's high/low/close from Dhan's DAILY candles (cached for
@@ -75,7 +75,6 @@ INTERVAL_MINUTES = 5
 FIRST_WINDOW_CANDLES = 3  # 3 x 5 min = the first 15 minutes
 TARGET_R_MULTIPLE = 5
 SL_BUFFER_PCT = 0.30
-MAX_TRADES_PER_DAY = 1
 ENTRY_CUTOFF = "10:15"
 
 MAX_WORKERS = 3
@@ -131,7 +130,7 @@ def compute_signal(df, prev, date_str, side="BUY", now=None):
         return None
 
     # Traded value (volume x close) of the first 15 minutes, in crore —
-    # the same-candle tiebreak in apply_trade_limit. Taken before the
+    # the same-candle tiebreak in pick_daily_trade. Taken before the
     # SELL-side price negation below.
     first_real = today.iloc[:FIRST_WINDOW_CANDLES]
     value15_cr = round(float((first_real["volume"] * first_real["close"]).sum()) / 1e7, 2)
@@ -269,35 +268,48 @@ def _fetch_one(symbol, security_id, date_str):
     return df, prev
 
 
+SKIPPED = "Not picked"
 STATUS_ORDER = [
     "Triggered", "Signal", "Target Hit", "SL Hit", "Invalidated",
-    "Waiting Green Candle", "Waiting Red Candle", "Waiting Pullback", "Expired", "Skipped (limit)",
+    "Waiting Green Candle", "Waiting Red Candle", "Waiting Pullback", "Expired", SKIPPED,
 ]
-SKIPPED = "Skipped (limit)"
 
 
-def apply_trade_limit(df, max_trades=MAX_TRADES_PER_DAY):
-    """Keep only the first `max_trades` triggered trades of the day; mark
-    every other stock that could still have traded after that point
-    "Skipped (limit)". -> (df, limit_time "HH:MM" or None)."""
-    if df.empty or "Trigger Time" not in df:
-        return df, None
-    triggered = df[df["Trigger Time"].notna()].sort_values(["Trigger Time", "15m Value Cr"], ascending=[True, False])
-    if len(triggered) < max_trades:
-        return df, None
-    kept = set(triggered.index[:max_trades])
-    limit_time = triggered["Trigger Time"].iloc[max_trades - 1]
+def pick_daily_trade(df, locked=()):
+    """The day's one trade, chosen at signal time: earliest Signal Time,
+    same candle -> highest "15m Value Cr". A pick Invalidated before entry
+    hands over to the next setup that was still pending then (not yet
+    triggered or invalidated). `locked` = symbols already picked earlier
+    today, kept first in that order so a re-run (e.g. a stock missing from
+    an earlier fetch) can't swap a pick that was already alerted. Every
+    stock not picked becomes SKIPPED. -> (df, [picked symbols in order])."""
+    if df.empty or "Signal Time" not in df:
+        return df, []
+    locked = list(locked)
+    sig = df[df["Signal Time"].notna()]
+    order = sorted(sig.index, key=lambda i: (
+        locked.index(sig.at[i, "Stock Name"]) if sig.at[i, "Stock Name"] in locked else len(locked),
+        sig.at[i, "Signal Time"],
+        -sig.at[i, "15m Value Cr"],
+    ))
+    picks, handover = [], None
+    for i in order:
+        row = df.loc[i]
+        if handover is not None:
+            if pd.notna(row["Trigger Time"]) and row["Trigger Time"] <= handover:
+                continue  # already past its entry before it could be alerted
+            if row["Status"] == "Invalidated" and row["Exit Time"] <= handover:
+                continue
+        picks.append(i)
+        if row["Status"] != "Invalidated":
+            break
+        handover = row["Exit Time"]
     df = df.copy()
-    for i, row in df.iterrows():
-        if i in kept:
-            continue
-        cancelled_before = row["Status"] == "Invalidated" and row["Exit Time"] <= limit_time
-        if not cancelled_before:
-            df.at[i, "Status"] = SKIPPED
-    return df, limit_time
+    df.loc[~df.index.isin(picks), "Status"] = SKIPPED
+    return df, [df.at[i, "Stock Name"] for i in picks]
 
 
-def get_pivot_pullback_setups(date_str=None, save=True):
+def get_pivot_pullback_setups(date_str=None, save=True, locked_picks=()):
     """-> (DataFrame, breadth dict). Breadth (advances/declines at 09:30)
     picks BUY or SELL; the DataFrame holds every stock whose first 15
     minutes crossed the pivot on that side, each with its setup status."""
@@ -345,8 +357,8 @@ def get_pivot_pullback_setups(date_str=None, save=True):
             if result is not None:
                 rows.append({"Stock Name": symbol, "Security ID": sid, **result})
 
-    df, limit_time = apply_trade_limit(pd.DataFrame(rows))
-    breadth["limit_time"] = limit_time
+    df, picks = pick_daily_trade(pd.DataFrame(rows), locked_picks)
+    breadth["picks"] = picks
     if not df.empty:
         df["_order"] = df["Status"].map(STATUS_ORDER.index)
         df = df.sort_values(["_order", "Signal Time", "Stock Name"]).drop(columns="_order").reset_index(drop=True)
