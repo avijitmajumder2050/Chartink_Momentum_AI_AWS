@@ -2023,7 +2023,8 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
     """Shared by the admin's manual "+ Breakout alert" action (api_admin_
     create_breakout_entries below) and the automatic morning bot
     (_auto_create_breakout_alerts) — entry = the first opening candle's
-    high, stop-loss = the second candle's low, either way. A stock
+    high (or the live price, if it's already above that by the time the
+    2nd candle closes), stop-loss = the second candle's low, either way. A stock
     qualifies via EITHER of two conditions (see INSTANT_QUALIFY_NEAR_
     HIGH_FRACTION above for the second one):
       1. Pullback: the second candle closed red.
@@ -2103,6 +2104,24 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
             results.append({"symbol": symbol, "ok": False, "reason": f"2nd candle low ({second_low}) isn't below entry ({entry_price}) — likely a circuit-frozen candle, not a real breakout setup."})
             continue
         sl_price = _buffered_sl(second_low)
+
+        # Qualifying only happens once the 2nd candle has closed, so the
+        # price is often already past the 1st candle's high by then. Left
+        # as the entry, that stock "triggers" at once, well above its
+        # entry, and its SL% (measured from that stale entry) looks
+        # falsely tight (seen live: SHAREINDIA, 2026-10-05, entry 214.47
+        # triggered at 216.51 - a 0.38% "risk" that was really 1.32%).
+        # Use the live price as the entry instead, so entry and SL% are
+        # what a trade placed now would actually get.
+        entry_basis = f"{first_minute_mod.INTERVAL_MINUTES}-min opening candle high"
+        ltp, _lower, _upper = dhan_connector.get_circuit_limits(security_id)
+        if ltp is not None and ltp > entry_price:
+            entry_price = round(round(ltp / PRICE_TICK) * PRICE_TICK, 2)
+            entry_basis = f"live price (already above 1st candle high {first_candle['high']:.2f})"
+
+        # 1st-candle traded value (volume x price) - the breakout race's
+        # ranking score, see _breakout_watch_once.
+        traded_value = round(first_candle["volume"] * first_candle["close"])
         try:
             entry = campaign_connector.create_entry(
                 symbol=symbol,
@@ -2110,13 +2129,15 @@ def _create_breakout_entries_for_symbols(symbols, created_by):
                 sl_price=sl_price,
                 target_price=None,
                 note=(
-                    f"Breakout setup ({qualify_reason}): {first_minute_mod.INTERVAL_MINUTES}-min opening "
-                    f"candle high {entry_price:.2f} (entry), SL {sl_price:.2f} "
-                    f"(2nd candle low {second_low:.2f} - {SL_BUFFER_PCT:.2f}%)"
+                    f"Breakout setup ({qualify_reason}): entry {entry_price:.2f} "
+                    f"({entry_basis}), SL {sl_price:.2f} "
+                    f"(2nd candle low {second_low:.2f} - {SL_BUFFER_PCT:.2f}%), "
+                    f"1st candle traded value ₹{traded_value / 1e7:.2f} cr"
                 ),
                 source="first_minute_movers",
                 entry_type="momentum",
                 created_by=created_by,
+                strength=traded_value,
             )
         except campaign_connector.CampaignError as exc:
             results.append({"symbol": symbol, "ok": False, "reason": str(exc)})
@@ -2859,8 +2880,9 @@ def _start_alert_monitor():
 #      entry_triggered), has price crossed the entry yet? The general bot
 #      would still eventually catch entry_triggered too, just up to 5
 #      minutes later — this exists to react faster, and to implement
-#      "first one wins": the moment ANY pending breakout-batch stock
-#      actually crosses its entry price, every OTHER still-pending one
+#      "one trade per batch": only the strongest pending stock (highest
+#      1st-candle traded value) may trigger, and the moment it crosses
+#      its entry price, every OTHER still-pending one
 #      from that same batch is deactivated immediately, AND step 1's
 #      qualification process is stopped for the rest of the day too — a
 #      stock still waiting on 2nd-candle data at that exact moment can't
@@ -2887,36 +2909,45 @@ def _breakout_watch_once():
     if len(pending) < 2:
         return  # nothing to race against — a lone candidate just waits for the general bot
 
-    # A tick can find more than one pending stock already past its entry
-    # (prices move between 60s checks, and multiple can cross within the
-    # same window) — collect every one that has crossed on this tick,
-    # then pick the tightest stop-loss (lowest SL% = lowest risk) among
-    # them as the single winner, rather than an arbitrary list-order
-    # tiebreak. A stock that crossed on an earlier tick already won and
-    # was removed from "pending" (entry_triggered set), so this only
-    # ever compares stocks crossing for the first time on this same tick.
-    crossed = []
-    for entry in pending:
-        entry_price = entry.get("entry_price")
-        if entry_price is None:
+    # Only the STRONGEST pending stock — highest 1st-candle traded value
+    # (volume x price, stored as "strength" when it qualified) — may
+    # trigger; the rest wait behind it. This replaced "first to cross,
+    # lowest SL% wins" (2026-10-05): that picked whichever stock happened
+    # to already be past its entry at the check, not the best one —
+    # SHAREINDIA (₹1.9 cr 1st candle) won and stopped out, while MARINE
+    # (₹17.7 cr, crossed a minute later) ran 4R. If the leader falls to
+    # its SL before ever triggering, its setup has failed: it's dropped
+    # and the next strongest becomes the leader.
+    pending.sort(key=lambda e: float(e.get("strength") or 0), reverse=True)
+    entry = current_price = None
+    for leader in pending:
+        if leader.get("entry_price") is None:
             continue
         try:
-            change = _symbol_change_pct(entry["symbol"])
+            change = _symbol_change_pct(leader["symbol"])
         except Exception:
             change = None
-        current_price = change["value"] if change else None
-        if current_price is not None and current_price >= float(entry_price):
-            sl_price_raw = entry.get("sl_price")
-            sl_pct = None
-            if sl_price_raw is not None and float(entry_price) > 0:
-                sl_pct = (float(entry_price) - float(sl_price_raw)) / float(entry_price)
-            crossed.append((entry, current_price, sl_pct))
+        price = change["value"] if change else None
+        if price is None:
+            return  # no live price for the leader this tick — try again next tick
+        leader_sl = leader.get("sl_price")
+        if leader_sl is not None and price <= float(leader_sl):
+            try:
+                campaign_connector.update_entry(
+                    leader["id"], active=False,
+                    note=(leader.get("note") or "") + f" [dropped - fell to SL {float(leader_sl):.2f} before entry (at {price:.2f})]",
+                )
+            except Exception as exc:
+                print(f"[breakout-watch] couldn't drop {leader['symbol']}: {exc}", file=sys.stderr)
+            pending = [e for e in pending if e["id"] != leader["id"]]
+            continue
+        if price >= float(leader["entry_price"]):
+            entry, current_price = leader, price
+        break
 
-    if not crossed:
+    if entry is None:
         return
 
-    crossed.sort(key=lambda c: c[2] if c[2] is not None else float("inf"))
-    entry, current_price, _winner_sl_pct = crossed[0]
     entry_price = float(entry["entry_price"])
     sl_price = float(entry["sl_price"]) if entry.get("sl_price") is not None else None
 
@@ -2960,7 +2991,7 @@ def _breakout_watch_once():
         try:
             campaign_connector.update_entry(
                 loser["id"], active=False,
-                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} won (lowest SL%, entry triggered at {current_price:.2f})]",
+                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} won (strongest 1st candle, entry triggered at {current_price:.2f})]",
             )
         except Exception as exc:
             print(f"[breakout-watch] couldn't deactivate {loser['symbol']}: {exc}", file=sys.stderr)
@@ -2978,7 +3009,7 @@ def _breakout_watch_once():
         _auto_breakout_state["done"] = True
         _save_auto_breakout_state()
 
-    print(f"[breakout-watch] {today_str}: {entry['symbol']} won (lowest SL%, entry triggered at {current_price:.2f}) among {len(crossed)} crossed this tick - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
+    print(f"[breakout-watch] {today_str}: {entry['symbol']} won (strongest 1st candle, entry triggered at {current_price:.2f}) - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
 
 
 def _breakout_watch_loop():

@@ -96,7 +96,7 @@ def _clean_entry_type(entry_type):
     return entry_type
 
 
-def create_entry(symbol, entry_price, sl_price, target_price, note, source, created_by, entry_type=""):
+def create_entry(symbol, entry_price, sl_price, target_price, note, source, created_by, entry_type="", strength=None):
     symbol = (symbol or "").strip().upper()
     if not symbol:
         raise CampaignError("A stock symbol is required.")
@@ -130,6 +130,10 @@ def create_entry(symbol, entry_price, sl_price, target_price, note, source, crea
         "created_at": now_iso,
         "updated_at": now_iso,
     }
+    # Ranking score for the breakout race (app.py's _breakout_watch_once)
+    # — only breakout-batch entries carry one.
+    if strength is not None:
+        item["strength"] = _to_decimal(strength, "Strength")
     _get_entries_table().put_item(Item=item)
     return item
 
