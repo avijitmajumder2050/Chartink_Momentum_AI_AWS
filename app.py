@@ -2817,9 +2817,30 @@ def _entry_tracker_state(entry):
     }
 
 
+def _breakout_race_pending(entries, today_str):
+    """Today's qualified breakout candidates still waiting on entry — the
+    field _breakout_watch_once races, when there are at least 2 of them."""
+    return [
+        e for e in entries
+        if e.get("source") == "first_minute_movers"
+        and (e.get("created_at") or "").startswith(today_str)
+        and "entry_triggered" not in (e.get("milestones_notified") or [])
+    ]
+
+
 def _check_and_notify_active_entries():
     entries = campaign_connector.list_entries(active_only=True)
+    # Stocks in the breakout race are the race's to trigger, not this
+    # bot's — otherwise every racer already above its entry got its own
+    # "Entry triggered" alert, and, now marked triggered, escaped the
+    # race's cancellation and kept alerting (2026-10-06: ROSSTECH, MEESHO,
+    # OPTIEMUS all alerted at 09:26 while WELCORP was the leader).
+    today_str = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
+    racing = _breakout_race_pending(entries, today_str)
+    racing_ids = {e["id"] for e in racing} if len(racing) >= 2 else set()
     for entry in entries:
+        if entry["id"] in racing_ids:
+            continue
         entry_price = entry.get("entry_price")
         if entry_price is None:
             continue
@@ -2908,12 +2929,7 @@ BREAKOUT_WATCH_INTERVAL_SECONDS = 60
 def _breakout_watch_once():
     today_str = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
     entries = campaign_connector.list_entries(active_only=True)
-    pending = [
-        e for e in entries
-        if e.get("source") == "first_minute_movers"
-        and (e.get("created_at") or "").startswith(today_str)
-        and "entry_triggered" not in (e.get("milestones_notified") or [])
-    ]
+    pending = _breakout_race_pending(entries, today_str)
     if len(pending) < 2:
         return  # nothing to race against — a lone candidate just waits for the general bot
 
