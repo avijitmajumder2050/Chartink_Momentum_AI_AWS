@@ -1665,6 +1665,12 @@ def _order_fills(trades, order_id, security_id, qty):
 def _apply_fills(snap, fills, original_sl):
     if fills and fills["entry_price"]:
         snap["entry_price"] = fills["entry_price"]
+    if fills and snap["state"] == "active" and fills["exit_price"]:
+        # A manual exit from the Dhan console leaves the super order
+        # looking open — entry TRADED, SL leg CANCELLED, target leg still
+        # PENDING (WELCORP 2026-10-06, sold 14:51). The fills are the
+        # authority: fully sold means closed.
+        snap.update(state="closed", close_reason="Exited")
     if fills and snap["state"] == "closed" and fills["exit_price"]:
         snap.update(exit_price=fills["exit_price"], exit_time=fills["exit_time"], exit_from_fills=True)
     # An SL exit at least one trailing jump beyond the original stop means
@@ -1832,6 +1838,18 @@ def _quantile_order_row(intent, dhan_orders, trades_for_date):
     return row
 
 
+def _open_trade_ltp(symbol, security_id):
+    try:
+        change = _symbol_change_pct(symbol) if symbol else None
+    except Exception:
+        change = None
+    if change and change.get("value"):
+        return change["value"]
+    if security_id:
+        return dhan_connector.get_circuit_limits(security_id, max_attempts=2)[0]
+    return None
+
+
 def _quantile_order_pnl(row):
     exit_or_ltp = row["exit_price"] if row["state"] == "closed" else row["ltp"]
     if row["entry_price"] is None or exit_or_ltp is None or not row["qty"]:
@@ -1886,10 +1904,13 @@ def api_admin_quantile_orders():
     rows = []
     for intent in intents:
         row = _quantile_order_row(intent, dhan_orders, trades_for_date)
-        # The order book's ltp is frozen at order time — use a live quote
-        # for trades still open.
-        if row["state"] == "active" and intent.get("security_id"):
-            row["ltp"] = dhan_connector.get_circuit_limits(intent["security_id"], max_attempts=1)[0] or row["ltp"]
+        # The order book's ltp is frozen at order time (= the fill price,
+        # so falling back to it showed a ₹0 P&L) — use a live price for
+        # trades still open, or none at all. The cached price the alert
+        # bots track first: a single-shot Dhan quote often fails in market
+        # hours, when the bots share the account's quote rate limit.
+        if row["state"] == "active":
+            row["ltp"] = _open_trade_ltp(row["symbol"], intent.get("security_id"))
         row["pnl"] = _quantile_order_pnl(row)
         rows.append(row)
     return jsonify({"orders": rows, "dhan_error": dhan_error})
