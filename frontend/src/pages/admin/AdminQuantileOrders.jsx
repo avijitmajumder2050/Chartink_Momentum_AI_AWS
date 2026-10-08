@@ -208,7 +208,7 @@ export default function AdminQuantileOrders() {
                     <tr key={o.entry_id} style={{ borderBottom: "1px solid #F0F1F4" }}>
                       <td style={cell}>
                         <span style={{ fontWeight: 700 }}>{o.symbol}</span>
-                        <span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>{o.side} · {formatTime(o.created_at)}</span>
+                        <span style={{ fontSize: 11, color: "#8A90A0", display: "block" }}>{o.side} · {o.strategy === "pivot" ? "Pivot" : "Breakout"} · {formatTime(o.created_at)}</span>
                       </td>
                       <td style={cell}>
                         <span title={o.dhan_status || ""} style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 100, color: st.color, background: st.background }}>{st.label}</span>
