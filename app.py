@@ -2767,8 +2767,21 @@ def _market_breadth_positive_pct():
     return breadth["advancing"] / breadth["sampleSize"] * 100
 
 
-def _quantity_instruction():
-    pct = _market_breadth_positive_pct()
+# The breakout race's auto-order risks this much on the trade, and half
+# of it when breadth is weak — the same call the "Entry triggered"
+# alert's HALF/FULL line makes, from the same breadth reading, so the
+# real order matches what the alert says. Unknown breadth -> full, as
+# the alert leaves it to judgement rather than saying HALF.
+BREAKOUT_MAX_LOSS = 1000
+
+
+def _breakout_max_loss(breadth_pct):
+    if breadth_pct is not None and breadth_pct < BREADTH_FULL_QTY_THRESHOLD_PCT:
+        return BREAKOUT_MAX_LOSS / 2
+    return BREAKOUT_MAX_LOSS
+
+
+def _quantity_instruction(pct):
     if pct is None:
         return "Quantity: use your own judgement (market breadth data isn't available right now)."
     if pct >= BREADTH_FULL_QTY_THRESHOLD_PCT:
@@ -2776,11 +2789,13 @@ def _quantity_instruction():
     return f"Quantity: HALF (~50%) — market breadth is weak ({pct:.0f}% of tracked stocks advancing)."
 
 
-def _milestone_message(symbol, milestone, entry_price, sl_price, current_price):
+def _milestone_message(symbol, milestone, entry_price, sl_price, current_price, breadth_pct=None):
     if milestone == "entry_triggered":
+        if breadth_pct is None:
+            breadth_pct = _market_breadth_positive_pct()
         return (
             f"🔔 Entry triggered — {symbol}",
-            f"{symbol} has crossed your entry price of ₹{entry_price:.2f} (now ₹{current_price:.2f}). {_quantity_instruction()}",
+            f"{symbol} has crossed your entry price of ₹{entry_price:.2f} (now ₹{current_price:.2f}). {_quantity_instruction(breadth_pct)}",
         )
     if milestone == "profit_2pct":
         pct = (current_price - entry_price) / entry_price * 100
@@ -2996,7 +3011,10 @@ def _breakout_watch_once():
     entry_price = float(entry["entry_price"])
     sl_price = float(entry["sl_price"]) if entry.get("sl_price") is not None else None
 
-    title, body = _milestone_message(entry["symbol"], "entry_triggered", entry_price, sl_price, current_price)
+    # One breadth reading for both the alert's HALF/FULL line and the
+    # order's risk, so the two can't disagree.
+    breadth_pct = _market_breadth_positive_pct()
+    title, body = _milestone_message(entry["symbol"], "entry_triggered", entry_price, sl_price, current_price, breadth_pct=breadth_pct)
     try:
         _send_campaign_notification(
             title, body, ALERT_MONITOR_AUDIENCE, entry_symbols=[entry["symbol"]],
@@ -3016,6 +3034,7 @@ def _breakout_watch_once():
                 intent = order_intent_connector.create_intent(
                     entry_id=entry["id"], symbol=entry["symbol"], security_id=security_id,
                     side="BUY", entry_price=entry_price, sl_price=sl_price,
+                    max_loss=_breakout_max_loss(breadth_pct),
                 )
                 if intent is not None:
                     order_intent_connector.trigger_order_executor()

@@ -74,7 +74,7 @@ def _to_decimal(value, field_name):
         raise OrderIntentError(f"{field_name} must be a number.")
 
 
-def create_intent(entry_id, symbol, security_id, side, entry_price, sl_price, target_price=None):
+def create_intent(entry_id, symbol, security_id, side, entry_price, sl_price, target_price=None, max_loss=None):
     """Idempotency gate 1. Returns the created item, or None if an intent
     for this entry_id already exists (never raises for that case — a
     duplicate _breakout_watch_once() run should just no-op silently, not
@@ -88,6 +88,9 @@ def create_intent(entry_id, symbol, security_id, side, entry_price, sl_price, ta
         "entry_price": _to_decimal(entry_price, "Entry price"),
         "sl_price": _to_decimal(sl_price, "Stop-loss price"),
         "target_price": _to_decimal(target_price, "Target price"),
+        # Rupees to risk on the trade — trading-bot-algo sizes the order
+        # from it (its own default when absent).
+        "max_loss": _to_decimal(max_loss, "Max loss"),
         "status": "pending",
         "created_at": now_iso,
         "updated_at": now_iso,
