@@ -15,6 +15,7 @@ account.
 """
 
 import io
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -65,10 +66,21 @@ def _get_client():
     return _client
 
 
+# Only the columns used below, as text: a full parse of the ~27 MB,
+# 216k-row master peaks ~130 MB (vs ~40 MB this way).
+SCRIP_MASTER_COLUMNS = ["SEM_EXM_EXCH_ID", "SEM_SEGMENT", "SEM_INSTRUMENT_NAME", "SEM_TRADING_SYMBOL", "SEM_SMST_SECURITY_ID"]
+# One download+parse at a time. When the day-old cache expired, every
+# thread resolving a symbol fetched it at once; four parallel full parses
+# ran the t3.micro out of memory, the worker was killed before any copy
+# was cached, and each new worker repeated it — a crash loop that took
+# the backend down (2026-10-25 19:06).
+_master_lock = threading.Lock()
+
+
 def _fetch_nse_equity_master():
     response = requests.get(SCRIP_MASTER_URL, timeout=30)
     response.raise_for_status()
-    raw = pd.read_csv(io.BytesIO(response.content))
+    raw = pd.read_csv(io.BytesIO(response.content), usecols=SCRIP_MASTER_COLUMNS, dtype=str)
 
     # Filter values confirmed against a real download of this CSV — see
     # .agents/skills/dhanhq/references/instruments.md for the general
@@ -94,7 +106,8 @@ def _fetch_nse_equity_master():
 def get_nse_equity_master():
     """DataFrame with columns [symbol, security_id] for the NSE cash-equity
     universe. Cached to disk (connectors/cache.py) for a day."""
-    records = cache.get_or_fetch("dhan_nse_equity_master", SECURITY_MASTER_CACHE_TTL_SECONDS, _fetch_nse_equity_master)
+    with _master_lock:
+        records = cache.get_or_fetch("dhan_nse_equity_master", SECURITY_MASTER_CACHE_TTL_SECONDS, _fetch_nse_equity_master)
     return pd.DataFrame(records)
 
 

@@ -449,7 +449,8 @@ def _fetch_index_master():
         response.raise_for_status()
         raw = response.content
 
-    df = pd.read_csv(io.BytesIO(raw), low_memory=False)
+    # Only the columns used, as text — see dhan_connector.SCRIP_MASTER_COLUMNS.
+    df = pd.read_csv(io.BytesIO(raw), usecols=["SEM_SEGMENT", "SEM_INSTRUMENT_NAME", "SEM_TRADING_SYMBOL", "SEM_SMST_SECURITY_ID"], dtype=str)
     idx = df[(df["SEM_SEGMENT"] == "I") & (df["SEM_INSTRUMENT_NAME"] == "INDEX")]
     # Keyed space-free — Dhan's own index names aren't consistent about
     # spacing ("NIFTY AUTO" has one, "NIFTYIT" doesn't), and app.py's
@@ -462,8 +463,13 @@ def _fetch_index_master():
     }
 
 
+_index_master_lock = threading.Lock()
+
+
 def _get_index_master():
-    return cache.get_or_fetch("chart_index_master", MAPPING_CACHE_TTL_SECONDS, _fetch_index_master)
+    # One fetch at a time — same crash loop as dhan_connector._master_lock.
+    with _index_master_lock:
+        return cache.get_or_fetch("chart_index_master", MAPPING_CACHE_TTL_SECONDS, _fetch_index_master)
 
 
 def _resolve_index_symbol(symbol):
