@@ -12,6 +12,7 @@ import MutualFunds from "./pages/MutualFunds";
 import Subscription from "./pages/Subscription";
 import Dashboard from "./pages/Dashboard";
 import ChartWall from "./pages/ChartWall";
+import ResultsScanner from "./pages/ResultsScanner";
 import Callback from "./auth/Callback";
 import RequireAuth from "./auth/RequireAuth";
 import RequireAdmin from "./auth/RequireAdmin";
@@ -76,6 +77,16 @@ export default function App() {
             <RequireSubscription>
               <SectorOverview />
             </RequireSubscription>
+          }
+        />
+        <Route
+          path="/markets/results-scanner"
+          element={
+            // RequireAuth, not RequireSubscription: presets are free; the
+            // page and the API gate custom criteria to paid plans.
+            <RequireAuth>
+              <ResultsScanner />
+            </RequireAuth>
           }
         />
         <Route

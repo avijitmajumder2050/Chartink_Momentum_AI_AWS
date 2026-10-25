@@ -3747,6 +3747,68 @@ def firebase_messaging_sw():
 # API
 # ============================================================
 
+def _has_paid_plan(user):
+    if user["role"] == "admin":
+        return True
+    return subscription_connector.get_subscription(user["email"]).get("plan", "free") in ("pro", "premium")
+
+
+@app.get("/api/results-scanner/meta")
+@login_required
+def api_results_scanner_meta():
+    """Fields, operators, presets and available quarters for the Results
+    Scanner page (frontend/src/pages/ResultsScanner.jsx)."""
+    return jsonify({
+        "source": "screener",
+        "fields": [{"key": k, "label": v} for k, v in results_scanner.FIELDS.items()],
+        "operators": list(results_scanner.OPERATORS),
+        "presets": [{"id": k, "name": p["name"], "criteria": p["criteria"]} for k, p in results_scanner.PRESETS.items()],
+        "flags": results_scanner.FLAG_TEXT,
+        **results_scanner.store_meta(),
+    })
+
+
+@app.post("/api/results-scanner")
+@login_required
+def api_results_scanner():
+    """Run a Results Scanner query. Presets are open to every signed-in
+    user; custom criteria need a paid plan (checked here, not just in the
+    page)."""
+    body = request.get_json(silent=True) or {}
+    if body.get("source", "screener") != "screener":
+        return jsonify({"error": "Only the screener.in source is available."}), 400
+    criteria = body.get("criteria")
+    try:
+        results_scanner.validate_criteria(criteria)
+    except results_scanner.CriteriaError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not results_scanner.is_preset(criteria) and not _has_paid_plan(_current_user()):
+        return jsonify({"error": "Custom criteria need a Pro or Premium plan.", "code": "PRO_REQUIRED"}), 403
+
+    quarter = body.get("quarter") or results_scanner.expected_quarter()
+    if not re.fullmatch(r"\d{4}-(03|06|09|12)", str(quarter)):
+        return jsonify({"error": "quarter must look like 2026-09."}), 400
+    try:
+        min_cap = float(body["min_market_cap"]) if body.get("min_market_cap") not in (None, "") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "min_market_cap must be a number."}), 400
+
+    result, cached = results_scanner.cached_scan_criteria(
+        criteria, quarter,
+        exclude_financials=bool(body.get("exclude_financials", False)),
+        exclude_negative_base=bool(body.get("exclude_negative_base", True)),
+        min_market_cap=min_cap,
+    )
+    meta = results_scanner.store_meta()
+    return jsonify({
+        **result,
+        "quarter_label": results_scanner.quarter_label(quarter),
+        "source": "screener",
+        "fetched_at": meta["fetched_at"],
+        "cached": cached,
+    })
+
+
 @app.get("/api/scanners")
 @subscription_required
 def api_scanners():

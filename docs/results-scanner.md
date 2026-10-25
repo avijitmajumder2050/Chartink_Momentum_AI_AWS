@@ -9,6 +9,17 @@ page (`/scanner`, Pro-gated like every other scanner):
 | Results: QoQ 10/10 | Sales QoQ > 10, Profit QoQ > 10 |
 | Results: QoQ + YoY strong | QoQ Momentum + Profit YoY > 0 |
 
+It also has its own page, **Markets › Results Scanner**
+(`/markets/results-scanner`, `frontend/src/pages/ResultsScanner.jsx`):
+quarter picker, preset chips, a nested AND/OR condition builder, exclude
+negative base / exclude financials / min market cap, sortable table with
+All / Clean / Financials / Needs review tabs, CSV export, criteria in the
+URL (`?q=`) so a scan can be shared, and a "relax" offer when nothing
+matches. Presets are free for any signed-in user; custom criteria need
+Pro/Premium, enforced by `POST /api/results-scanner` (`code:
+"PRO_REQUIRED"`). `GET /api/results-scanner/meta` serves fields,
+operators, presets and the quarters available.
+
 Code: `connectors/results_scanner.py` (fetching, store, metrics, criteria,
 presets) and `_results_scanner_runner` in `app.py` (Scanner-page shape).
 Tests: `tests/test_results_scanner.py` on saved pages in

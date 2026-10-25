@@ -319,14 +319,22 @@ def refresh_store(source=None, universe=None, stop=None, max_symbols=None):
 # ---------------------------------------------------------------- metrics
 
 
-def pct(now, base):
-    """% change; None if either side is missing or the base is <= 0."""
-    if now is None or base is None or base <= 0:
+def pct(now, base, negative_base=False):
+    """% change; None if either side is missing or the base is <= 0 —
+    unless negative_base, which measures off |base| (a loss shrinking or
+    turning into profit reads as a gain). A zero base is always None."""
+    if now is None or base is None or base == 0:
         return None
+    if base < 0:
+        return (now - base) / abs(base) * 100 if negative_base else None
     return (now / base - 1) * 100
 
 
-def company_metrics(entry, quarter):
+def _pct(now, base, negative_base=False):
+    return pct(now, base, negative_base)
+
+
+def company_metrics(entry, quarter, negative_base=False):
     """Row of QoQ/YoY metrics for `quarter` ('2026-09'), or None if the
     company hasn't reported it."""
     quarters = entry.get("quarters", {})
@@ -335,6 +343,10 @@ def company_metrics(entry, quarter):
         return None
     prev = quarters.get(shift_quarter(quarter, 1), {})
     ago = quarters.get(shift_quarter(quarter, 4), {})
+
+    def pct(now, base):
+        return _pct(now, base, negative_base)
+
     m = {
         "sales_qoq": pct(cur.get("sales"), prev.get("sales")),
         "ebitda_qoq": pct(cur.get("ebitda"), prev.get("ebitda")),
@@ -441,30 +453,110 @@ PRESETS = {
 }
 
 
-def scan(criteria, quarter=None, store=None, exclude_financials=False):
+def scan(criteria, quarter=None, store=None, exclude_financials=False, exclude_negative_base=True, min_market_cap=None):
     """-> {rows, total_reported, matched, quarter, eliminated_most}. Pure
     over the store; rows sorted by Profit QoQ, best first."""
     store = store if store is not None else load_store()
     quarter = quarter or expected_quarter()
     rows, reported, misses = [], 0, {}
     for symbol, entry in store.items():
-        metrics = company_metrics(entry, quarter)
+        metrics = company_metrics(entry, quarter, negative_base=not exclude_negative_base)
         if metrics is None:
             continue
         flags = flags_for(symbol, entry, metrics, quarter)
         if exclude_financials and "financial" in flags:
             continue
+        if min_market_cap and (metrics.get("market_cap") or 0) < min_market_cap:
+            continue
         reported += 1
         for rule in leaf_rules(criteria):
             if not _rule_passes(rule, metrics):
-                misses[rule_text(rule)] = misses.get(rule_text(rule), 0) + 1
+                text = rule_text(rule)
+                misses[text] = (misses.get(text, (0, rule))[0] + 1, rule)
         if evaluate(criteria, metrics):
             rows.append({"symbol": symbol, "name": entry.get("name", ""), "reported": entry.get("first_seen", {}).get(quarter),
                          "basis": entry.get("basis"), "flags": flags, **metrics})
     rows.sort(key=lambda r: -(r["profit_qoq"] if r["profit_qoq"] is not None else -1e9))
-    worst = max(misses.items(), key=lambda kv: kv[1]) if misses else None
+    worst = max(misses.items(), key=lambda kv: kv[1][0]) if misses else None
     return {"rows": rows, "total_reported": reported, "matched": len(rows), "quarter": quarter,
-            "eliminated_most": {"rule": worst[0], "count": worst[1]} if worst else None}
+            "eliminated_most": {"rule": worst[0], "count": worst[1][0], "condition": worst[1][1]} if worst else None}
+
+
+OPERATORS = (">", ">=", "<", "<=", "between")
+MAX_RULES = 25
+MAX_DEPTH = 3
+
+
+class CriteriaError(ValueError):
+    pass
+
+
+def validate_criteria(criteria, depth=1):
+    """Raises CriteriaError unless `criteria` is a well-formed group of
+    known fields/operators (bounded size, so a request can't be huge)."""
+    if not isinstance(criteria, dict) or str(criteria.get("op", "")).upper() not in ("AND", "OR"):
+        raise CriteriaError("Each group needs op AND or OR.")
+    rules = criteria.get("rules")
+    if not isinstance(rules, list) or not rules:
+        raise CriteriaError("Each group needs at least one condition.")
+    if depth > MAX_DEPTH:
+        raise CriteriaError(f"Groups can be nested at most {MAX_DEPTH} deep.")
+    if sum(1 for _ in leaf_rules(criteria)) > MAX_RULES:
+        raise CriteriaError(f"At most {MAX_RULES} conditions.")
+    for r in rules:
+        if "rules" in r:
+            validate_criteria(r, depth + 1)
+            continue
+        if r.get("field") not in FIELDS:
+            raise CriteriaError(f"Unknown field {r.get('field')!r}.")
+        if r.get("operator") not in OPERATORS:
+            raise CriteriaError(f"Unknown operator {r.get('operator')!r}.")
+        v = r.get("value")
+        if r["operator"] == "between":
+            if not (isinstance(v, list) and len(v) == 2 and all(isinstance(x, (int, float)) for x in v)):
+                raise CriteriaError("between needs [low, high].")
+        elif not isinstance(v, (int, float)) or isinstance(v, bool):
+            raise CriteriaError(f"{FIELDS[r['field']]} needs a number.")
+
+
+def _normalized(criteria):
+    """Same criteria, canonical shape — so a preset sent back from the page
+    compares equal to PRESETS regardless of key order or int/float."""
+    return json.loads(json.dumps(criteria, sort_keys=True), parse_float=float, parse_int=float)
+
+
+def is_preset(criteria):
+    return any(_normalized(criteria) == _normalized(p["criteria"]) for p in PRESETS.values())
+
+
+def store_meta(store=None):
+    """Quarters available (with how many companies reported each) and when
+    the store was last refreshed."""
+    store = store if store is not None else load_store()
+    counts = {}
+    for entry in store.values():
+        for q in entry.get("quarters", {}):
+            counts[q] = counts.get(q, 0) + 1
+    target = expected_quarter()
+    keys = sorted({target, *counts}, reverse=True)[:4]
+    fetched = max((e.get("fetched_at", 0) for e in store.values()), default=0)
+    return {
+        "quarters": [{"key": k, "label": quarter_label(k), "reported": counts.get(k, 0)} for k in keys],
+        "fetched_at": datetime.datetime.fromtimestamp(fetched).isoformat() if fetched else None,
+        "companies": len(store),
+    }
+
+
+def cached_scan_criteria(criteria, quarter, **filters):
+    """scan() cached SCAN_CACHE_TTL_SECONDS per source, quarter, criteria
+    and filters. Returns (result, cached)."""
+    key = f"results_scan_screener_{quarter}_{criteria_hash({'c': criteria, 'f': filters})}"
+    hit = cache.peek(key)
+    fresh = hit is not None and time.time() - hit["cached_at"] < SCAN_CACHE_TTL_SECONDS
+    started = time.time()
+    result = cache.get_or_fetch(key, SCAN_CACHE_TTL_SECONDS, lambda: scan(criteria, quarter, **filters))
+    logger.info("results-scanner %s: %s of %s in %.2fs (cached=%s)", quarter, result["matched"], result["total_reported"], time.time() - started, fresh)
+    return result, fresh
 
 
 def criteria_hash(criteria):

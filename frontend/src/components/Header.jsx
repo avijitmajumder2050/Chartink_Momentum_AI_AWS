@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import NotificationBell from "./NotificationBell";
 
-const MARKETS_PATHS = ["/markets/ipo-hub", "/markets/research", "/markets/sectors", "/markets/mutual-funds", "/scanner", "/markets/chart", "/markets/chart-wall"];
+const MARKETS_PATHS = ["/markets/ipo-hub", "/markets/research", "/markets/sectors", "/markets/mutual-funds", "/scanner", "/markets/chart", "/markets/chart-wall", "/markets/results-scanner"];
 
 function UserMenu({ user, logout }) {
   const [open, setOpen] = useState(false);
@@ -156,6 +156,7 @@ export default function Header() {
                     <Link to="/markets/sectors" onClick={() => setDropdownOpen(false)}>Sector Overview</Link>
                     <Link to="/markets/mutual-funds" onClick={() => setDropdownOpen(false)}>Mutual Funds</Link>
                     <Link to="/scanner" onClick={() => setDropdownOpen(false)}>Scanner</Link>
+                    <Link to="/markets/results-scanner" onClick={() => setDropdownOpen(false)}>Results Scanner</Link>
                     <Link to="/markets/chart" onClick={() => setDropdownOpen(false)}>Chart</Link>
                     <Link to="/markets/chart-wall" onClick={() => setDropdownOpen(false)}>Chart Wall</Link>
                   </div>

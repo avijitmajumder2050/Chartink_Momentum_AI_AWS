@@ -145,7 +145,7 @@ def test_zero_matches_reports_most_eliminating_rule(store):
     crit = {"op": "AND", "rules": [{"field": "sales_qoq", "operator": ">", "value": 1000}, {"field": "profit_qoq", "operator": ">", "value": 0}]}
     result = rs.scan(crit, Q, store=store)
     assert result["matched"] == 0
-    assert result["eliminated_most"] == {"rule": "Sales QoQ % > 1000", "count": 3}
+    assert result["eliminated_most"] == {"rule": "Sales QoQ % > 1000", "count": 3, "condition": crit["rules"][0]}
 
 
 # ------------------------------------------------------- fetching (fakes)
@@ -231,3 +231,57 @@ def test_scanner_page_entries(monkeypatch, store):
     assert result["stats"][0]["label"] == "of 3 reported for Sep '26 match"
     assert [c["key"] for c in result["columns"]][:3] == ["symbol", "reported", "sales_qoq"]
     assert result["rows"][0]["symbol"] in ("COFORGE", "HCLTECH")
+
+
+# ------------------------------------------------------------- endpoints
+
+@pytest.fixture()
+def client(monkeypatch, store, tmp_path):
+    import app
+    monkeypatch.setattr(rs, "load_store", lambda path=None: store)
+    monkeypatch.setattr(app.cache, "CACHE_DIR", str(tmp_path))
+    user = {"email": "u@example.com", "role": "user"}
+    monkeypatch.setattr(app, "_current_user", lambda: user)
+    plan = {"plan": "free"}
+    monkeypatch.setattr(app.subscription_connector, "get_subscription", lambda email: plan)
+    c = app.app.test_client()
+    c.plan = plan
+    return c
+
+
+def test_meta_endpoint(client):
+    d = client.get("/api/results-scanner/meta").get_json()
+    assert d["source"] == "screener" and len(d["presets"]) == 3
+    sep = next(q for q in d["quarters"] if q["key"] == Q)
+    assert sep["reported"] == 3 and sep["label"] == "Sep '26"
+
+
+def test_free_user_can_run_preset_not_custom(client):
+    preset = rs.PRESETS["qoq_momentum"]["criteria"]
+    r = client.post("/api/results-scanner", json={"quarter": Q, "criteria": preset})
+    assert r.status_code == 200 and "COFORGE" in [x["symbol"] for x in r.get_json()["rows"]]
+    custom = {"op": "AND", "rules": [{"field": "sales_qoq", "operator": ">", "value": 1}]}
+    r = client.post("/api/results-scanner", json={"quarter": Q, "criteria": custom})
+    assert r.status_code == 403 and r.get_json()["code"] == "PRO_REQUIRED"
+    client.plan["plan"] = "pro"
+    assert client.post("/api/results-scanner", json={"quarter": Q, "criteria": custom}).status_code == 200
+
+
+def test_bad_requests(client):
+    ok = rs.PRESETS["qoq_10_10"]["criteria"]
+    assert client.post("/api/results-scanner", json={"quarter": Q, "criteria": {"op": "XOR", "rules": []}}).status_code == 400
+    assert client.post("/api/results-scanner", json={"quarter": "2026-08", "criteria": ok}).status_code == 400
+    assert client.post("/api/results-scanner", json={"quarter": Q, "criteria": ok, "source": "trendlyne"}).status_code == 400
+    bad = {"op": "AND", "rules": [{"field": "nope", "operator": ">", "value": 1}]}
+    assert client.post("/api/results-scanner", json={"quarter": Q, "criteria": bad}).status_code == 400
+
+
+def test_filters_min_cap_and_negative_base(client, store):
+    client.plan["plan"] = "pro"
+    crit = {"op": "AND", "rules": [{"field": "ebitda_qoq", "operator": ">", "value": -1000}]}
+    on = client.post("/api/results-scanner", json={"quarter": Q, "criteria": crit}).get_json()
+    off = client.post("/api/results-scanner", json={"quarter": Q, "criteria": crit, "exclude_negative_base": False}).get_json()
+    assert "HDFCBANK" not in [r["symbol"] for r in on["rows"]]
+    assert "HDFCBANK" in [r["symbol"] for r in off["rows"]]  # negative base measured off |base|
+    capped = client.post("/api/results-scanner", json={"quarter": Q, "criteria": crit, "min_market_cap": 1}).get_json()
+    assert capped["total_reported"] == 0  # fixtures carry no market cap
