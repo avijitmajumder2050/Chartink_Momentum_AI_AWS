@@ -685,7 +685,6 @@ function shiftQuarter(key, back) {
 const checkBack = (field) => (field.endsWith("_qoq") ? 1 : field.endsWith("_yoy") ? 4 : 0);
 const ruleText = (k) => `${k.operator} ${Array.isArray(k.value) ? k.value.join("–") : k.value}${checkBack(k.field) ? "%" : ""}`;
 const fmtNum = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const fmtChange = (k) => (checkBack(k.field) ? fmtPct(k.actual) : fmtNum(k.actual));
 const changeColor = (v) => (v === null || v === undefined ? "#A8A29E" : v < 0 ? C.down : C.up);
 const scoreBadge = (c) => ({ ...(c.excluded ? GREY_BADGE : c.passed === c.total ? PASS_BADGE : FAIL_BADGE), ...BIG });
 const scoreText = (c) => (c.excluded ? "Excluded · base ≤ 0" : `${c.passed} / ${c.total} rules pass`);
@@ -695,13 +694,14 @@ const thStyle = (align = "right") => ({ fontFamily: SANS, fontSize: 12, fontWeig
 const tdStyle = (extra = {}) => ({ fontFamily: MONO, fontSize: 13, textAlign: "right", padding: "10px 12px", borderBottom: "1px solid #F0EEE9", whiteSpace: "nowrap", ...extra });
 
 function Lookup({ result, text, onText, hits, card, onPick, onOpen }) {
+  const [focused, setFocused] = useState(false);
   return (
     <section aria-label="Stock lookup" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <h2 style={{ margin: 0, fontFamily: DISPLAY, fontWeight: 800, fontSize: 20 }}>Look up a stock</h2>
         <span style={{ fontSize: 13, color: C.dim }}>Checks its latest quarter against your current rules</span>
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid #D6D3D1", borderRadius: 12, padding: "0 14px", background: "#FCFBF9", minHeight: 48 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${focused ? C.accent : "#D6D3D1"}`, boxShadow: focused ? `0 0 0 3px ${C.accentTint}` : "none", borderRadius: 12, padding: "0 14px", background: focused ? C.card : "#FCFBF9", minHeight: 48 }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
         <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Search stock</span>
         <input
@@ -709,8 +709,11 @@ function Lookup({ result, text, onText, hits, card, onPick, onOpen }) {
           value={text}
           disabled={!result}
           onChange={(e) => onText(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          autoComplete="off"
           placeholder={result ? "Search by company name or symbol, e.g. Coforge, Infosys, Federal Bank" : "Run a scan first"}
-          style={{ flex: "1 1 auto", minWidth: 0, border: 0, background: "transparent", font: `500 15px ${SANS}`, color: C.ink, padding: "12px 0" }}
+          style={{ flex: "1 1 auto", minWidth: 0, border: 0, outline: "none", background: "transparent", font: `500 15px ${SANS}`, color: C.ink, padding: "12px 0", colorScheme: "light" }}
         />
       </label>
       {hits.length > 0 && (
@@ -727,35 +730,7 @@ function Lookup({ result, text, onText, hits, card, onPick, onOpen }) {
           No {result.quarter_label} result found for that name yet. It may not have reported, or it's hidden by your filters.
         </p>
       )}
-      {card && (
-        <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-              <button type="button" onClick={() => onOpen(card.symbol)} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 16, color: C.ink }}>{card.name || card.symbol}</button>
-              <span style={{ fontSize: 13, color: C.dim }}>{card.symbol} · {result.quarter_label} quarter{card.reported ? ` · first seen ${card.reported}` : ""} · {verdict(card)}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, color: C.dim }}>Profit YoY <span style={{ fontFamily: MONO, fontWeight: 600, color: changeColor(card.profit_yoy) }}>{fmtPct(card.profit_yoy)}</span></span>
-              <span style={scoreBadge(card)}>{scoreText(card)}</span>
-            </div>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 440 }}>
-              <thead><tr><th style={thStyle("left")}>Metric</th><th style={thStyle()}>Change</th><th style={thStyle()}>Rule</th><th style={thStyle("center")}>Result</th></tr></thead>
-              <tbody>
-                {card.checks.map((k, i) => (
-                  <tr key={i}>
-                    <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500 })}>{k.label}</td>
-                    <td style={tdStyle({ color: changeColor(k.actual), fontWeight: 600 })}>{fmtChange(k)}</td>
-                    <td style={tdStyle({ color: C.dim })}>{ruleText(k)}</td>
-                    <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}><span style={k.pass ? PASS_BADGE : FAIL_BADGE}>{k.pass ? "Pass" : "Fail"}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {card && <ReportCard card={card} quarter={result.quarter} onOpen={onOpen} />}
     </section>
   );
 }
