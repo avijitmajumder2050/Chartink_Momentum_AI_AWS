@@ -24,7 +24,9 @@ const TABS = [
   ["clean", "Clean"],
   ["fin", "Financials"],
   ["review", "Needs review"],
+  ["cards", "All reported · report cards"],
 ];
+const PAGE_SIZES = [10, 50, 100];
 const COLUMNS = [
   ["symbol", "Company", "text"],
   ["reported", "First seen", "text"],
@@ -261,6 +263,11 @@ export default function ResultsScanner() {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState("all");
   const [sort, setSort] = useState({ key: "profit_qoq", dir: -1 });
+  const [cardFilter, setCardFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [lookupText, setLookupText] = useState("");
+  const [lookupPick, setLookupPick] = useState("");
   const autoRan = useRef(false);
 
   useEffect(() => {
@@ -308,6 +315,8 @@ export default function ResultsScanner() {
       .then((d) => {
         setResult(d);
         setTab("all");
+        setCardFilter("all");
+        setPage(1);
       })
       .catch((d) => setError({ message: d?.error || "The scan failed. Try again.", code: d?.code }))
       .finally(() => setLoading(false));
@@ -358,13 +367,50 @@ export default function ResultsScanner() {
 
   const counts = useMemo(() => {
     const out = {};
-    TABS.forEach(([k]) => (out[k] = result ? result.rows.filter((r) => inTab(r, k)).length : 0));
+    TABS.forEach(([k]) => (out[k] = !result ? 0 : k === "cards" ? result.reported.length : result.rows.filter((r) => inTab(r, k)).length));
     return out;
   }, [result]);
 
+  // Report cards: every reporter, by conditions passed (see scan()).
+  const ruleCount = result?.reported[0]?.total || 0;
+  const cardFilters = [
+    ["all", "All", () => true],
+    ["full", `${ruleCount} of ${ruleCount}`, (c) => !c.excluded && c.passed === ruleCount],
+    ["one", `${ruleCount - 1} of ${ruleCount}`, (c) => !c.excluded && c.passed === ruleCount - 1],
+    ["low", `${Math.max(ruleCount - 2, 0)} or fewer`, (c) => !c.excluded && c.passed <= ruleCount - 2],
+    ["ex", "Excluded", (c) => c.excluded],
+  ].filter(([k]) => ruleCount > 1 || (k !== "one" && k !== "low"));
+  const cards = useMemo(() => {
+    if (!result) return [];
+    const keep = (cardFilters.find(([k]) => k === cardFilter) || cardFilters[0])[2];
+    return result.reported.filter(keep);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cardFilters is rebuilt from result each render
+  }, [result, cardFilter]);
+
+  const listLength = tab === "cards" ? cards.length : rows.length;
+  const pages = Math.max(1, Math.ceil(listLength / pageSize));
+  const currentPage = Math.min(page, pages);
+  const from = (currentPage - 1) * pageSize;
+  const pagedRows = rows.slice(from, from + pageSize);
+  const pagedCards = cards.slice(from, from + pageSize);
+
+  const lookupHits = useMemo(() => {
+    const q = lookupText.trim().toLowerCase();
+    if (!q || !result) return [];
+    return result.reported.filter((c) => c.symbol.toLowerCase().includes(q) || (c.name || "").toLowerCase().includes(q));
+  }, [lookupText, result]);
+  const lookupCard = lookupHits.find((c) => c.symbol === lookupPick) || lookupHits[0] || null;
+
   function exportCsv() {
-    const head = ["Symbol", "Company", "First seen", ...COLUMNS.slice(2, 9).map((c) => c[1] + " %"), "Flags"];
-    const lines = rows.map((r) => [r.symbol, r.name, r.reported || "", ...COLUMNS.slice(2, 9).map((c) => (r[c[0]] ?? "") === "" ? "" : Number(r[c[0]]).toFixed(2)), r.flags.join(" ")]);
+    let head, lines;
+    if (tab === "cards") {
+      const checks = cards[0]?.checks || [];
+      head = ["Symbol", "Company", "First seen", "Passed", "Of", "Excluded", ...checks.map((k) => `${k.label} ${k.operator} ${Array.isArray(k.value) ? k.value.join("-") : k.value}`), "Flags"];
+      lines = cards.map((c) => [c.symbol, c.name, c.reported || "", c.passed, c.total, c.excluded ? "yes" : "", ...c.checks.map((k) => (k.actual ?? "")), c.flags.join(" ")]);
+    } else {
+      head = ["Symbol", "Company", "First seen", ...COLUMNS.slice(2, 9).map((c) => c[1] + " %"), "Flags"];
+      lines = rows.map((r) => [r.symbol, r.name, r.reported || "", ...COLUMNS.slice(2, 9).map((c) => (r[c[0]] ?? "") === "" ? "" : Number(r[c[0]]).toFixed(2)), r.flags.join(" ")]);
+    }
     const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -410,6 +456,19 @@ export default function ResultsScanner() {
         </div>
 
         {metaError && <Notice tone="error">{metaError}</Notice>}
+
+        <Lookup
+          result={result}
+          text={lookupText}
+          onText={(v) => {
+            setLookupText(v);
+            setLookupPick("");
+          }}
+          hits={lookupHits}
+          card={lookupCard}
+          onPick={setLookupPick}
+          onOpen={(symbol) => navigate(`/markets/research?symbol=${encodeURIComponent(symbol)}`)}
+        />
 
         <section aria-label="Criteria" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
@@ -468,7 +527,7 @@ export default function ResultsScanner() {
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", fontSize: 13, color: C.dim }}>
                 <span>Source: screener.in company pages · fetched {fetchedText}{result.cached ? " · cached" : ""}</span>
-                <button type="button" onClick={exportCsv} disabled={!rows.length}
+                <button type="button" onClick={exportCsv} disabled={!listLength}
                   style={{ border: "1px solid #D6D3D1", background: C.card, color: "#44403C", font: `500 13px ${SANS}`, padding: "10px 14px", borderRadius: 10, minHeight: 40, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><polyline points="7 10 12 15 17 10" /><path d="M5 21h14" /></svg>
                   Export CSV
@@ -480,7 +539,7 @@ export default function ResultsScanner() {
           {result && (
             <div role="tablist" aria-label="Result groups" style={{ display: "flex", flexWrap: "wrap", gap: 6, borderBottom: `1px solid ${C.line}` }}>
               {TABS.map(([k, label]) => (
-                <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setPage(1); }}
                   style={{ border: 0, borderBottom: `2px solid ${tab === k ? C.accent : "transparent"}`, background: "transparent", color: tab === k ? C.accentInk : C.dim, font: `600 14px ${SANS}`, padding: "12px 14px", minHeight: 44, marginBottom: -1, cursor: "pointer" }}>
                   {label} <span style={{ fontFamily: MONO, fontSize: 12, marginLeft: 4 }}>{counts[k]}</span>
                 </button>
@@ -495,7 +554,28 @@ export default function ResultsScanner() {
             <Notice tone="warn">These pass the rules, but the numbers are distorted by a tiny base, an extreme jump or falling YoY profit. Check the 4–5 quarter trend before trusting them.</Notice>
           )}
 
-          {(loading || result) && (
+          {result && tab === "cards" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <p style={{ margin: 0, fontSize: 14, color: "#44403C" }}>
+                Every company that reported {result.quarter_label}, scored against your current rules. Sorted by rules passed, then profit QoQ.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {cardFilters.map(([k, label, keep]) => (
+                  <button key={k} type="button" onClick={() => { setCardFilter(k); setPage(1); }} style={{ ...chip(cardFilter === k), padding: "8px 12px" }}>
+                    {label} · {result.reported.filter(keep).length}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: 16 }}>
+                {pagedCards.map((c) => (
+                  <ReportCard key={c.symbol} card={c} quarter={result.quarter} onOpen={(symbol) => navigate(`/markets/research?symbol=${encodeURIComponent(symbol)}`)} />
+                ))}
+              </div>
+              {!pagedCards.length && <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 14, color: C.dim }}>No companies in this group.</div>}
+            </div>
+          )}
+
+          {(loading || result) && tab !== "cards" && (
             <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960 }}>
                 <thead>
@@ -528,7 +608,7 @@ export default function ResultsScanner() {
                           ))}
                         </tr>
                       ))
-                    : rows.map((r) => (
+                    : pagedRows.map((r) => (
                         <tr key={r.symbol} onClick={() => navigate(`/markets/research?symbol=${encodeURIComponent(r.symbol)}`)} style={{ cursor: "pointer" }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F6FF")} onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                           {COLUMNS.map(([key, , type]) => (
@@ -567,12 +647,204 @@ export default function ResultsScanner() {
             </div>
           )}
 
+          {result && listLength > 0 && (
+            <Pager
+              page={currentPage}
+              pages={pages}
+              pageSize={pageSize}
+              total={listLength}
+              from={from}
+              onPage={setPage}
+              onSize={(n) => {
+                setPageSize(n);
+                setPage(1);
+              }}
+            />
+          )}
+
           <p style={{ margin: 0, fontSize: 12, color: C.dim }}>
             Data from screener.in. OPM QoQ is a relative change; a % off a zero or negative base is blank unless “Exclude negative base” is off. Not investment advice.
           </p>
         </section>
       </main>
     </div>
+  );
+}
+
+const PASS_BADGE = { display: "inline-block", fontSize: 12, fontWeight: 600, color: "#166534", background: "#DCFCE7", padding: "4px 8px", borderRadius: 6 };
+const FAIL_BADGE = { ...PASS_BADGE, color: "#991B1B", background: "#FEE2E2" };
+const GREY_BADGE = { ...PASS_BADGE, color: "#44403C", background: "#E7E5E4" };
+const BIG = { fontSize: 13, padding: "6px 10px" };
+
+function shiftQuarter(key, back) {
+  const [y, m] = key.split("-").map(Number);
+  const total = y * 12 + (m - 1) - 3 * back;
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][total % 12];
+  return `${month} '${String(Math.floor(total / 12)).slice(2)}`;
+}
+const checkBack = (field) => (field.endsWith("_qoq") ? 1 : field.endsWith("_yoy") ? 4 : 0);
+const ruleText = (k) => `${k.operator} ${Array.isArray(k.value) ? k.value.join("–") : k.value}${checkBack(k.field) ? "%" : ""}`;
+const fmtNum = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmtChange = (k) => (checkBack(k.field) ? fmtPct(k.actual) : fmtNum(k.actual));
+const changeColor = (v) => (v === null || v === undefined ? "#A8A29E" : v < 0 ? C.down : C.up);
+const scoreBadge = (c) => ({ ...(c.excluded ? GREY_BADGE : c.passed === c.total ? PASS_BADGE : FAIL_BADGE), ...BIG });
+const scoreText = (c) => (c.excluded ? "Excluded · base ≤ 0" : `${c.passed} / ${c.total} rules pass`);
+const verdict = (c) =>
+  c.excluded ? "A % isn't comparable (previous value ≤ 0 or missing)" : c.matched ? `In your scan results${c.flags.length ? " · flagged: " + c.flags.map((f) => FLAG_LABEL[f] || f).join(", ") : ""}` : "Not in your scan results";
+const thStyle = (align = "right") => ({ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: C.dim, textAlign: align, padding: "10px 12px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap", background: "#F5F4F0" });
+const tdStyle = (extra = {}) => ({ fontFamily: MONO, fontSize: 13, textAlign: "right", padding: "10px 12px", borderBottom: "1px solid #F0EEE9", whiteSpace: "nowrap", ...extra });
+
+function Lookup({ result, text, onText, hits, card, onPick, onOpen }) {
+  return (
+    <section aria-label="Stock lookup" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h2 style={{ margin: 0, fontFamily: DISPLAY, fontWeight: 800, fontSize: 20 }}>Look up a stock</h2>
+        <span style={{ fontSize: 13, color: C.dim }}>Checks its latest quarter against your current rules</span>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid #D6D3D1", borderRadius: 12, padding: "0 14px", background: "#FCFBF9", minHeight: 48 }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.dim} strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
+        <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Search stock</span>
+        <input
+          type="search"
+          value={text}
+          disabled={!result}
+          onChange={(e) => onText(e.target.value)}
+          placeholder={result ? "Search by company name or symbol, e.g. Coforge, Infosys, Federal Bank" : "Run a scan first"}
+          style={{ flex: "1 1 auto", minWidth: 0, border: 0, background: "transparent", font: `500 15px ${SANS}`, color: C.ink, padding: "12px 0" }}
+        />
+      </label>
+      {hits.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {hits.slice(0, 6).map((c) => (
+            <button key={c.symbol} type="button" onClick={() => onPick(c.symbol)} style={{ ...chip(card?.symbol === c.symbol), padding: "8px 12px" }}>
+              {c.name || c.symbol}
+            </button>
+          ))}
+        </div>
+      )}
+      {text.trim() && result && !card && (
+        <p style={{ margin: 0, fontSize: 14, color: C.dim }}>
+          No {result.quarter_label} result found for that name yet. It may not have reported, or it's hidden by your filters.
+        </p>
+      )}
+      {card && (
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+              <button type="button" onClick={() => onOpen(card.symbol)} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 16, color: C.ink }}>{card.name || card.symbol}</button>
+              <span style={{ fontSize: 13, color: C.dim }}>{card.symbol} · {result.quarter_label} quarter{card.reported ? ` · first seen ${card.reported}` : ""} · {verdict(card)}</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 13, color: C.dim }}>Profit YoY <span style={{ fontFamily: MONO, fontWeight: 600, color: changeColor(card.profit_yoy) }}>{fmtPct(card.profit_yoy)}</span></span>
+              <span style={scoreBadge(card)}>{scoreText(card)}</span>
+            </div>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 440 }}>
+              <thead><tr><th style={thStyle("left")}>Metric</th><th style={thStyle()}>Change</th><th style={thStyle()}>Rule</th><th style={thStyle("center")}>Result</th></tr></thead>
+              <tbody>
+                {card.checks.map((k, i) => (
+                  <tr key={i}>
+                    <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500 })}>{k.label}</td>
+                    <td style={tdStyle({ color: changeColor(k.actual), fontWeight: 600 })}>{fmtChange(k)}</td>
+                    <td style={tdStyle({ color: C.dim })}>{ruleText(k)}</td>
+                    <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}><span style={k.pass ? PASS_BADGE : FAIL_BADGE}>{k.pass ? "Pass" : "Fail"}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReportCard({ card, quarter, onOpen }) {
+  const allQoq = card.checks.every((k) => checkBack(k.field) === 1);
+  return (
+    <article style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <button type="button" onClick={() => onOpen(card.symbol)} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 15, color: C.ink }}>{card.name || card.symbol}</button>
+          <span style={{ fontSize: 12, color: C.dim }}>{card.symbol}{card.reported ? ` · first seen ${card.reported}` : ""} · {verdict(card)}</span>
+        </div>
+        <span style={scoreBadge(card)}>{scoreText(card)}</span>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
+          <thead>
+            <tr>
+              <th style={thStyle("left")}>Metric (₹ Cr)</th>
+              <th style={thStyle()}>{shiftQuarter(quarter, 0)}</th>
+              <th style={thStyle()}>{allQoq ? shiftQuarter(quarter, 1) : "Base"}</th>
+              <th style={thStyle()}>Change</th>
+              <th style={thStyle("center")}>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {card.checks.map((k, i) => {
+              const back = checkBack(k.field);
+              return (
+                <tr key={i}>
+                  <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500 })}>
+                    {k.label.replace(/ %$/, "")} <span style={{ color: C.dim, fontWeight: 400, fontSize: 12 }}>{ruleText(k)}</span>
+                  </td>
+                  <td style={tdStyle({ fontSize: 12 })}>{fmtNum(k.now)}</td>
+                  <td style={tdStyle({ fontSize: 12, color: C.dim })} title={back ? shiftQuarter(quarter, back) : ""}>
+                    {fmtNum(k.base)}{!allQoq && back ? <span style={{ fontSize: 11 }}> · {shiftQuarter(quarter, back)}</span> : null}
+                  </td>
+                  <td style={tdStyle({ fontSize: 12, fontWeight: 600, color: changeColor(k.actual) })}>{fmtChange(k)}</td>
+                  <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}>
+                    <span style={card.excluded ? GREY_BADGE : k.pass ? PASS_BADGE : FAIL_BADGE}>{card.excluded && k.actual === null ? "—" : k.pass ? "Pass" : "Fail"}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ padding: "10px 14px", fontSize: 12, color: C.dim, borderTop: "1px solid #F0EEE9", marginTop: "auto" }}>
+        Profit YoY <span style={{ fontFamily: MONO, fontWeight: 600, color: changeColor(card.profit_yoy) }}>{fmtPct(card.profit_yoy)}</span>
+      </div>
+    </article>
+  );
+}
+
+function Pager({ page, pages, pageSize, total, from, onPage, onSize }) {
+  let lo = Math.max(1, page - 3);
+  const hi = Math.min(pages, lo + 6);
+  lo = Math.max(1, hi - 6);
+  const nums = [];
+  for (let p = lo; p <= hi; p++) nums.push(p);
+  const btn = (active, enabled = true) => ({
+    minWidth: 40, height: 40, padding: "0 10px", borderRadius: 8, font: `600 13px ${MONO}`,
+    border: `1px solid ${active ? C.accent : "#D6D3D1"}`, background: active ? C.accent : C.card,
+    color: active ? "#FFF" : enabled ? "#44403C" : "#A8A29E", cursor: enabled ? "pointer" : "default",
+  });
+  return (
+    <nav aria-label="Pagination" style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "4px 0" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 13, color: C.dim }}>Per page</span>
+        <div role="group" aria-label="Results per page" style={{ display: "flex", background: C.soft, borderRadius: 8, padding: 3 }}>
+          {PAGE_SIZES.map((n) => (
+            <button key={n} type="button" aria-pressed={n === pageSize} onClick={() => onSize(n)}
+              style={{ border: 0, minWidth: 44, height: 36, borderRadius: 6, font: `600 13px ${MONO}`, cursor: "pointer", background: n === pageSize ? C.card : "transparent", color: n === pageSize ? C.accentInk : C.dim, boxShadow: n === pageSize ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>
+              {n}
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 13, color: "#44403C", fontFamily: MONO }}>Showing {from + 1}–{Math.min(from + pageSize, total)} of {total}</span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+        <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)} style={btn(false, page > 1)}>‹ Prev</button>
+        {nums.map((p) => (
+          <button key={p} type="button" aria-current={p === page ? "page" : undefined} onClick={() => onPage(p)} style={btn(p === page)}>{p}</button>
+        ))}
+        <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)} style={btn(false, page < pages)}>Next ›</button>
+        <span style={{ fontSize: 12, color: C.dim, marginLeft: 6 }}>Page {page} of {pages}</span>
+      </div>
+    </nav>
   );
 }
 

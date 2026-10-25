@@ -275,3 +275,16 @@ def test_filters_min_cap_and_negative_base(client, store):
     assert "HDFCBANK" in [r["symbol"] for r in off["rows"]]  # negative base measured off |base|
     capped = client.post("/api/results-scanner", json={"quarter": Q, "criteria": crit, "min_market_cap": 1}).get_json()
     assert capped["total_reported"] == 0  # fixtures carry no market cap
+
+
+def test_report_cards(store):
+    result = rs.scan(rs.PRESETS["qoq_momentum"]["criteria"], Q, store=store)
+    cards = {c["symbol"]: c for c in result["reported"]}
+    assert set(cards) == {"COFORGE", "HCLTECH", "HDFCBANK"}  # every reporter, matched or not
+    coforge = cards["COFORGE"]
+    assert coforge["matched"] and coforge["passed"] == coforge["total"] == 5 and not coforge["excluded"]
+    sales = next(c for c in coforge["checks"] if c["field"] == "sales_qoq")
+    assert sales["now"] == 6171.0 and sales["base"] == 5528.0 and sales["pass"]
+    bank = cards["HDFCBANK"]
+    assert bank["excluded"] and not bank["matched"]  # EBITDA/OPM base <= 0
+    assert result["reported"][-1]["symbol"] == "HDFCBANK"  # not-comparable sorted last

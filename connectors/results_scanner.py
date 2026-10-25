@@ -453,12 +453,44 @@ PRESETS = {
 }
 
 
+# Which absolute figures a rule's % compares: (quarter value key, quarters
+# back for the base — 1 = previous quarter, 4 = year ago, 0 = no base).
+FIELD_BASE = {
+    "sales_qoq": ("sales", 1), "ebitda_qoq": ("ebitda", 1), "opm_qoq": ("opm", 1),
+    "profit_qoq": ("net_profit", 1), "eps_qoq": ("eps", 1),
+    "sales_yoy": ("sales", 4), "ebitda_yoy": ("ebitda", 4), "profit_yoy": ("net_profit", 4), "eps_yoy": ("eps", 4),
+    "sales": ("sales", 0), "net_profit": ("net_profit", 0), "market_cap": (None, 0),
+}
+
+
+def _r2(v):
+    return round(v, 2) if isinstance(v, float) else v
+
+
+def report_card(entry, metrics, quarter, criteria):
+    """Every condition checked for one company: figures, % and pass/fail.
+    `excluded` when a condition's % isn't comparable (base <= 0 / missing)."""
+    quarters = entry.get("quarters", {})
+    checks = []
+    for rule in leaf_rules(criteria):
+        key, back = FIELD_BASE.get(rule["field"], (None, 0))
+        now = quarters.get(quarter, {}).get(key) if key else None
+        base = quarters.get(shift_quarter(quarter, back), {}).get(key) if key and back else None
+        actual = metrics.get(rule["field"])
+        checks.append({"field": rule["field"], "label": FIELDS[rule["field"]], "operator": rule["operator"], "value": rule["value"],
+                       "now": _r2(now), "base": _r2(base), "actual": _r2(actual), "pass": _rule_passes(rule, metrics)})
+    return {"checks": checks, "passed": sum(c["pass"] for c in checks), "total": len(checks),
+            "excluded": any(c["actual"] is None for c in checks)}
+
+
 def scan(criteria, quarter=None, store=None, exclude_financials=False, exclude_negative_base=True, min_market_cap=None):
-    """-> {rows, total_reported, matched, quarter, eliminated_most}. Pure
-    over the store; rows sorted by Profit QoQ, best first."""
+    """-> {rows, reported, total_reported, matched, quarter, eliminated_most}.
+    Pure over the store. rows: matches, by Profit QoQ best first. reported:
+    every company that reported the quarter (after the filters), with its
+    report card — for the page's stock lookup and report-cards view."""
     store = store if store is not None else load_store()
     quarter = quarter or expected_quarter()
-    rows, reported, misses = [], 0, {}
+    rows, reported, misses, cards = [], 0, {}, []
     for symbol, entry in store.items():
         metrics = company_metrics(entry, quarter, negative_base=not exclude_negative_base)
         if metrics is None:
@@ -473,12 +505,18 @@ def scan(criteria, quarter=None, store=None, exclude_financials=False, exclude_n
             if not _rule_passes(rule, metrics):
                 text = rule_text(rule)
                 misses[text] = (misses.get(text, (0, rule))[0] + 1, rule)
-        if evaluate(criteria, metrics):
-            rows.append({"symbol": symbol, "name": entry.get("name", ""), "reported": entry.get("first_seen", {}).get(quarter),
-                         "basis": entry.get("basis"), "flags": flags, **metrics})
+        matched = evaluate(criteria, metrics)
+        head = {"symbol": symbol, "name": entry.get("name", ""), "reported": entry.get("first_seen", {}).get(quarter), "flags": flags}
+        if matched:
+            rows.append({**head, "basis": entry.get("basis"), **metrics})
+        cards.append({**head, "matched": matched, "profit_qoq": _r2(metrics.get("profit_qoq")), "profit_yoy": _r2(metrics.get("profit_yoy")),
+                      **report_card(entry, metrics, quarter, criteria)})
     rows.sort(key=lambda r: -(r["profit_qoq"] if r["profit_qoq"] is not None else -1e9))
+    # Report cards: most conditions passed first, then profit QoQ; the
+    # not-comparable ones last.
+    cards.sort(key=lambda c: (c["excluded"], -c["passed"], -(c["profit_qoq"] if c["profit_qoq"] is not None else -1e9)))
     worst = max(misses.items(), key=lambda kv: kv[1][0]) if misses else None
-    return {"rows": rows, "total_reported": reported, "matched": len(rows), "quarter": quarter,
+    return {"rows": rows, "reported": cards, "total_reported": reported, "matched": len(rows), "quarter": quarter,
             "eliminated_most": {"rule": worst[0], "count": worst[1][0], "condition": worst[1][1]} if worst else None}
 
 
