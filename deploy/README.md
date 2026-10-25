@@ -161,6 +161,14 @@ Otherwise any future relaunch (a real terminate, not just stop/start)
 resurrects whatever config was current when the template was last
 refreshed, not what's in git today.
 
+## Results Scanner
+
+Three "Results:" entries in the Scanner page, fed by a weekday-morning
+refresher that reads screener.in company pages for the MarketSmith stock
+list. Env vars, refresh/caching behaviour, data-source notes and how to
+add a new source (e.g. NSE/BSE XBRL): [docs/results-scanner.md](../docs/results-scanner.md).
+No new secrets; no frontend change.
+
 ## Known gaps / next steps
 
 - No custom domain — `*.cloudfront.net` only, per current preference.
