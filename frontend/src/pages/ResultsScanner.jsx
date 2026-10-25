@@ -367,12 +367,12 @@ export default function ResultsScanner() {
 
   const counts = useMemo(() => {
     const out = {};
-    TABS.forEach(([k]) => (out[k] = !result ? 0 : k === "cards" ? result.reported.length : result.rows.filter((r) => inTab(r, k)).length));
+    TABS.forEach(([k]) => (out[k] = !result ? 0 : k === "cards" ? (result.reported || []).length : result.rows.filter((r) => inTab(r, k)).length));
     return out;
   }, [result]);
 
   // Report cards: every reporter, by conditions passed (see scan()).
-  const ruleCount = result?.reported[0]?.total || 0;
+  const ruleCount = result?.reported?.[0]?.total || 0;
   const cardFilters = [
     ["all", "All", () => true],
     ["full", `${ruleCount} of ${ruleCount}`, (c) => !c.excluded && c.passed === ruleCount],
@@ -383,7 +383,7 @@ export default function ResultsScanner() {
   const cards = useMemo(() => {
     if (!result) return [];
     const keep = (cardFilters.find(([k]) => k === cardFilter) || cardFilters[0])[2];
-    return result.reported.filter(keep);
+    return (result.reported || []).filter(keep);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cardFilters is rebuilt from result each render
   }, [result, cardFilter]);
 
@@ -397,7 +397,7 @@ export default function ResultsScanner() {
   const lookupHits = useMemo(() => {
     const q = lookupText.trim().toLowerCase();
     if (!q || !result) return [];
-    return result.reported.filter((c) => c.symbol.toLowerCase().includes(q) || (c.name || "").toLowerCase().includes(q));
+    return (result.reported || []).filter((c) => c.symbol.toLowerCase().includes(q) || (c.name || "").toLowerCase().includes(q));
   }, [lookupText, result]);
   const lookupCard = lookupHits.find((c) => c.symbol === lookupPick) || lookupHits[0] || null;
 
@@ -562,7 +562,7 @@ export default function ResultsScanner() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {cardFilters.map(([k, label, keep]) => (
                   <button key={k} type="button" onClick={() => { setCardFilter(k); setPage(1); }} style={{ ...chip(cardFilter === k), padding: "8px 12px" }}>
-                    {label} · {result.reported.filter(keep).length}
+                    {label} · {(result.reported || []).filter(keep).length}
                   </button>
                 ))}
               </div>
@@ -767,7 +767,8 @@ const checkMetric = (field) => {
 };
 
 function ReportCard({ card, quarter, onOpen }) {
-  const lineKeys = card.metrics.map((m) => m.key);
+  const metrics = card.metrics || [];
+  const lineKeys = metrics.map((m) => m.key);
   const extra = card.checks.filter((k) => !lineKeys.includes(checkMetric(k.field)));
   const resultBadges = (checks) =>
     checks.length === 0 ? (
@@ -786,10 +787,16 @@ function ReportCard({ card, quarter, onOpen }) {
     checks.map((k) => `${checkBack(k.field) === 4 ? "YoY " : checkBack(k.field) === 1 ? "QoQ " : ""}${ruleText(k)}`).join(" · ");
   const num = (v, key) => (key === "opm" && v !== null && v !== undefined ? `${Number(v).toFixed(1)}%` : fmtNum(v));
   return (
-    <article style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <article
+      onClick={() => onOpen(card.symbol)}
+      title={`Open ${card.name || card.symbol} in Stock Research`}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = C.accent)}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = C.line)}
+      style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", cursor: "pointer" }}
+    >
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-          <button type="button" onClick={() => onOpen(card.symbol)} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 15, color: C.ink }}>{card.name || card.symbol}</button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(card.symbol); }} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 15, color: C.accentInk }}>{card.name || card.symbol} →</button>
           <span style={{ fontSize: 12, color: C.dim }}>{card.symbol}{card.reported ? ` · first seen ${card.reported}` : ""} · {verdict(card)}</span>
         </div>
         <span style={scoreBadge(card)}>{scoreText(card)}</span>
@@ -808,7 +815,7 @@ function ReportCard({ card, quarter, onOpen }) {
             </tr>
           </thead>
           <tbody>
-            {card.metrics.map((m) => {
+            {metrics.map((m) => {
               const checks = card.checks.filter((k) => checkMetric(k.field) === m.key);
               return (
                 <tr key={m.key}>

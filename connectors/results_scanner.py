@@ -594,10 +594,16 @@ def store_meta(store=None):
     }
 
 
+# Bump whenever scan()'s output shape changes, so a deploy never serves a
+# cached result in the old shape (it broke the report cards for up to the
+# cache TTL after the 2026-10-25 deploys).
+SCAN_RESULT_VERSION = 3
+
+
 def cached_scan_criteria(criteria, quarter, **filters):
     """scan() cached SCAN_CACHE_TTL_SECONDS per source, quarter, criteria
     and filters. Returns (result, cached)."""
-    key = f"results_scan_screener_{quarter}_{criteria_hash({'c': criteria, 'f': filters})}"
+    key = f"results_scan_v{SCAN_RESULT_VERSION}_screener_{quarter}_{criteria_hash({'c': criteria, 'f': filters})}"
     hit = cache.peek(key)
     fresh = hit is not None and time.time() - hit["cached_at"] < SCAN_CACHE_TTL_SECONDS
     started = time.time()
