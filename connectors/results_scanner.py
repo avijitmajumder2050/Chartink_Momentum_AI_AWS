@@ -22,6 +22,7 @@ New data sources plug in through SOURCES: anything with fetch(symbol)
 """
 
 import datetime
+import glob
 import hashlib
 import io
 import json
@@ -676,13 +677,32 @@ SCAN_RESULT_VERSION = 4
 def cached_scan_criteria(criteria, quarter, **filters):
     """scan() cached SCAN_CACHE_TTL_SECONDS per source, quarter, criteria
     and filters. Returns (result, cached)."""
-    key = f"results_scan_v{SCAN_RESULT_VERSION}_screener_{quarter}_{criteria_hash({'c': criteria, 'f': filters})}"
+    # The store's mtime is part of the key: the refresher saves every 25
+    # companies, and a cached result from before that would hide the new
+    # data for the whole TTL (seen live 2026-10-25 22:37-22:52).
+    try:
+        store_stamp = int(os.path.getmtime(STORE_PATH))
+    except OSError:
+        store_stamp = 0
+    key = f"results_scan_v{SCAN_RESULT_VERSION}_screener_{quarter}_{store_stamp}_{criteria_hash({'c': criteria, 'f': filters})}"
     hit = cache.peek(key)
     fresh = hit is not None and time.time() - hit["cached_at"] < SCAN_CACHE_TTL_SECONDS
     started = time.time()
     result = cache.get_or_fetch(key, SCAN_CACHE_TTL_SECONDS, lambda: scan(criteria, quarter, **filters))
     logger.info("results-scanner %s: %s of %s in %.2fs (cached=%s)", quarter, result["matched"], result["total_reported"], time.time() - started, fresh)
+    _prune_scan_cache()
     return result, fresh
+
+
+def _prune_scan_cache():
+    """A new cache file per store save; drop the ones past their TTL."""
+    cutoff = time.time() - SCAN_CACHE_TTL_SECONDS
+    for path in glob.glob(os.path.join(cache.CACHE_DIR, "results_scan_v*_screener_*.json")):
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def criteria_hash(criteria):

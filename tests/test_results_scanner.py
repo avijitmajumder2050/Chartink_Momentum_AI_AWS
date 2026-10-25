@@ -315,3 +315,16 @@ def test_announced_newly_seen_quarter_and_merge():
 def test_old_store_entries_are_refetched():
     assert rs.needs_fetch({"quarters": {Q: {}}, "fetched_at": time.time()}, Q, time.time())
     assert not rs.needs_fetch({"quarters": {Q: {}}, "fetched_at": time.time(), "v": rs.STORE_VERSION}, Q, time.time())
+
+
+def test_scan_cache_follows_store_updates(tmp_path, monkeypatch, store):
+    monkeypatch.setattr(rs.cache, "CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(rs, "STORE_PATH", str(tmp_path / "store.json"))
+    crit = rs.PRESETS["qoq_10_10"]["criteria"]
+    rs.save_store({"COFORGE": store["COFORGE"]})
+    first, _ = rs.cached_scan_criteria(crit, Q)
+    assert first["total_reported"] == 1
+    time.sleep(1.1)  # mtime resolution
+    rs.save_store({"COFORGE": store["COFORGE"], "HCLTECH": store["HCLTECH"]})
+    second, cached = rs.cached_scan_criteria(crit, Q)
+    assert second["total_reported"] == 2 and not cached  # new data -> not the old cached result
