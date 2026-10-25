@@ -223,16 +223,6 @@ def test_refresh_skips_already_reported(tmp_path, monkeypatch, store):
     assert saved["HCLTECH"]["market_cap"] == 2.0 and Q in saved["HCLTECH"]["first_seen"]
 
 
-def test_scanner_page_entries(monkeypatch, store):
-    import app
-    monkeypatch.setattr(rs, "cached_scan", lambda preset_id, quarter=None: rs.scan(rs.PRESETS[preset_id]["criteria"], Q, store=store))
-    assert {"results_qoq_momentum", "results_qoq_10_10", "results_qoq_yoy_strong"} <= set(app.SCANNERS)
-    result = app.SCANNERS["results_qoq_momentum"]["run"]()
-    assert result["stats"][0]["label"] == "of 3 reported for Sep '26 match"
-    assert [c["key"] for c in result["columns"]][:3] == ["symbol", "reported", "sales_qoq"]
-    assert result["rows"][0]["symbol"] in ("COFORGE", "HCLTECH")
-
-
 # ------------------------------------------------------------- endpoints
 
 @pytest.fixture()

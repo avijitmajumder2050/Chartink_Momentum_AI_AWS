@@ -563,18 +563,6 @@ def criteria_hash(criteria):
     return hashlib.sha1(json.dumps(criteria, sort_keys=True).encode()).hexdigest()[:12]
 
 
-def cached_scan(preset_id, quarter=None):
-    """scan() for a preset, cached SCAN_CACHE_TTL_SECONDS per source,
-    quarter and criteria hash."""
-    criteria = PRESETS[preset_id]["criteria"]
-    quarter = quarter or expected_quarter()
-    key = f"results_scan_screener_{quarter}_{criteria_hash(criteria)}"
-    started = time.time()
-    result = cache.get_or_fetch(key, SCAN_CACHE_TTL_SECONDS, lambda: scan(criteria, quarter))
-    logger.info("results-scanner %s %s: %s of %s in %.2fs", preset_id, quarter, result["matched"], result["total_reported"], time.time() - started)
-    return result
-
-
 # --------------------------------------------------------------- refresher
 
 REFRESH_START = datetime.time(9, 5)

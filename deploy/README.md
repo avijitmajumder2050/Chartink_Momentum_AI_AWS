@@ -163,7 +163,7 @@ refreshed, not what's in git today.
 
 ## Results Scanner
 
-Three "Results:" entries in the Scanner page, fed by a weekday-morning
+The Markets › Results Scanner page, fed by a weekday-morning
 refresher that reads screener.in company pages for the MarketSmith stock
 list. Env vars, refresh/caching behaviour, data-source notes and how to
 add a new source (e.g. NSE/BSE XBRL): [docs/results-scanner.md](../docs/results-scanner.md).

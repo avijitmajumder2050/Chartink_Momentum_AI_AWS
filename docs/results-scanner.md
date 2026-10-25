@@ -1,27 +1,26 @@
 # Results Scanner
 
-Quarterly-results screens shown as three entries in the existing **Scanner**
-page (`/scanner`, Pro-gated like every other scanner):
-
-| Scanner | Conditions |
-|---|---|
-| Results: QoQ Momentum | Sales QoQ > 2.6, Profit QoQ > 8, EBITDA QoQ > 8, OPM QoQ > 3, EPS QoQ > 6 |
-| Results: QoQ 10/10 | Sales QoQ > 10, Profit QoQ > 10 |
-| Results: QoQ + YoY strong | QoQ Momentum + Profit YoY > 0 |
-
-It also has its own page, **Markets › Results Scanner**
+Quarterly-results screens on their own page, **Markets › Results Scanner**
 (`/markets/results-scanner`, `frontend/src/pages/ResultsScanner.jsx`):
 quarter picker, preset chips, a nested AND/OR condition builder, exclude
 negative base / exclude financials / min market cap, sortable table with
 All / Clean / Financials / Needs review tabs, CSV export, criteria in the
 URL (`?q=`) so a scan can be shared, and a "relax" offer when nothing
-matches. Presets are free for any signed-in user; custom criteria need
-Pro/Premium, enforced by `POST /api/results-scanner` (`code:
-"PRO_REQUIRED"`). `GET /api/results-scanner/meta` serves fields,
-operators, presets and the quarters available.
+matches.
+
+| Preset | Conditions |
+|---|---|
+| QoQ Momentum | Sales QoQ > 2.6, Profit QoQ > 8, EBITDA QoQ > 8, OPM QoQ > 3, EPS QoQ > 6 |
+| QoQ 10/10 | Sales QoQ > 10, Profit QoQ > 10 |
+| QoQ + YoY strong | QoQ Momentum + Profit YoY > 0 |
+
+Presets are free for any signed-in user; custom criteria need Pro/Premium,
+enforced by `POST /api/results-scanner` (`code: "PRO_REQUIRED"`).
+`GET /api/results-scanner/meta` serves fields, operators, presets and the
+quarters available.
 
 Code: `connectors/results_scanner.py` (fetching, store, metrics, criteria,
-presets) and `_results_scanner_runner` in `app.py` (Scanner-page shape).
+presets) and the two `/api/results-scanner` endpoints in `app.py`.
 Tests: `tests/test_results_scanner.py` on saved pages in
 `tests/fixtures/results_scanner/` — no live calls.
 
@@ -87,7 +86,7 @@ No login or cookie is needed — only public company pages are read.
    robots/terms checks.
 2. Register it in `results_scanner.SOURCES`.
 3. Pass it to `refresh_store(source=...)` (or give it its own store path) —
-   metrics, flags, criteria and the Scanner entries work unchanged.
+   metrics, flags, criteria and the page work unchanged.
 4. Add saved-response fixtures and tests under `tests/`.
 
 ## Tests

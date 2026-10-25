@@ -381,45 +381,6 @@ def _pivot_locked_picks():
     return _pivot_watch_state.get("picks", []) if _pivot_watch_state["date"] == today else []
 
 
-def _results_scanner_runner(preset_id):
-    """Scanner-page runner for one Results Scanner preset — the shared
-    {stats, columns, rows} shape over results_scanner's cached store."""
-    def run():
-        result = results_scanner.cached_scan(preset_id)
-        label = results_scanner.quarter_label(result["quarter"])
-        if not result["total_reported"]:
-            raise RuntimeError(f"No {label} results collected yet - the refresher reads screener.in each weekday morning (09:05-10:55 IST)")
-        rows = [{
-            **{k: (round(v, 2) if isinstance(v, float) else v) for k, v in r.items() if k != "flags"},
-            "flags": ", ".join(results_scanner.FLAG_TEXT[f] for f in r["flags"]) or "",
-        } for r in result["rows"]]
-        stats = [
-            _stat(f"of {result['total_reported']} reported for {label} match", result["matched"]),
-            _stat("Clean (no flags)", sum(1 for r in result["rows"] if not r["flags"])),
-            _stat("Financials", sum(1 for r in result["rows"] if "financial" in r["flags"])),
-        ]
-        if not result["matched"] and result["eliminated_most"]:
-            worst = result["eliminated_most"]
-            stats.append(_stat(f"removed by {worst['rule']} - try relaxing it", worst["count"]))
-        return {
-            "stats": stats,
-            "columns": [
-                _col("symbol", "Company", "symbol"),
-                _col("reported", "First seen"),
-                _col("sales_qoq", "Sales QoQ", "pct"),
-                _col("ebitda_qoq", "EBITDA QoQ", "pct"),
-                _col("opm_qoq", "OPM QoQ", "pct"),
-                _col("profit_qoq", "Profit QoQ", "pct"),
-                _col("eps_qoq", "EPS QoQ", "pct"),
-                _col("profit_yoy", "Profit YoY", "pct"),
-                _col("sales_yoy", "Sales YoY", "pct"),
-                _col("flags", "Flags"),
-            ],
-            "rows": rows,
-        }
-    return run
-
-
 def run_pivot_pullback():
     df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks())
     return _pivot_pullback_payload(df, breadth)
@@ -523,20 +484,6 @@ SCANNERS = {
             "its high"
         ),
         "run": run_pivot_pullback,
-    },
-    **{
-        f"results_{preset_id}": {
-            "name": f"Results: {preset['name']}",
-            "description": (
-                "Latest quarterly results vs the previous quarter (QoQ) and the "
-                "year-ago quarter (YoY): " + "; ".join(results_scanner.rule_text(r) for r in results_scanner.leaf_rules(preset["criteria"]))
-                + ". OPM QoQ is relative; a % off a zero/negative base fails. "
-                "Stocks from the MarketSmith list, numbers from screener.in company "
-                "pages (refreshed weekday mornings). Data from screener.in. Not investment advice."
-            ),
-            "run": _results_scanner_runner(preset_id),
-        }
-        for preset_id, preset in results_scanner.PRESETS.items()
     },
 }
 
