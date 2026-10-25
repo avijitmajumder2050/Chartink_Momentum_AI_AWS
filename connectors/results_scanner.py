@@ -467,10 +467,19 @@ def _r2(v):
     return round(v, 2) if isinstance(v, float) else v
 
 
-def report_card(entry, metrics, quarter, criteria):
-    """Every condition checked for one company: figures, % and pass/fail.
-    `excluded` when a condition's % isn't comparable (base <= 0 / missing)."""
+CARD_METRICS = (("sales", "Revenue / Sales"), ("ebitda", "EBITDA"), ("opm", "OPM %"), ("net_profit", "Net Profit"), ("eps", "EPS (₹)"))
+
+
+def report_card(entry, metrics, quarter, criteria, negative_base=False):
+    """Every condition checked for one company: figures, % and pass/fail;
+    plus `metrics`, each headline line for this quarter, the previous one
+    and the year-ago one with its QoQ and YoY change. `excluded` when a
+    condition's % isn't comparable (base <= 0 / missing)."""
     quarters = entry.get("quarters", {})
+    cur, prev, ago = (quarters.get(shift_quarter(quarter, n), {}) for n in (0, 1, 4))
+    lines = [{"key": k, "label": label, "now": _r2(cur.get(k)), "prev": _r2(prev.get(k)), "ago": _r2(ago.get(k)),
+              "qoq": _r2(pct(cur.get(k), prev.get(k), negative_base)), "yoy": _r2(pct(cur.get(k), ago.get(k), negative_base))}
+             for k, label in CARD_METRICS]
     checks = []
     for rule in leaf_rules(criteria):
         key, back = FIELD_BASE.get(rule["field"], (None, 0))
@@ -479,7 +488,7 @@ def report_card(entry, metrics, quarter, criteria):
         actual = metrics.get(rule["field"])
         checks.append({"field": rule["field"], "label": FIELDS[rule["field"]], "operator": rule["operator"], "value": rule["value"],
                        "now": _r2(now), "base": _r2(base), "actual": _r2(actual), "pass": _rule_passes(rule, metrics)})
-    return {"checks": checks, "passed": sum(c["pass"] for c in checks), "total": len(checks),
+    return {"checks": checks, "metrics": lines, "passed": sum(c["pass"] for c in checks), "total": len(checks),
             "excluded": any(c["actual"] is None for c in checks)}
 
 
@@ -510,7 +519,7 @@ def scan(criteria, quarter=None, store=None, exclude_financials=False, exclude_n
         if matched:
             rows.append({**head, "basis": entry.get("basis"), **metrics})
         cards.append({**head, "matched": matched, "profit_qoq": _r2(metrics.get("profit_qoq")), "profit_yoy": _r2(metrics.get("profit_yoy")),
-                      **report_card(entry, metrics, quarter, criteria)})
+                      **report_card(entry, metrics, quarter, criteria, negative_base=not exclude_negative_base)})
     rows.sort(key=lambda r: -(r["profit_qoq"] if r["profit_qoq"] is not None else -1e9))
     # Report cards: most conditions passed first, then profit QoQ; the
     # not-comparable ones last.

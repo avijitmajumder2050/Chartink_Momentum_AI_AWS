@@ -285,6 +285,10 @@ def test_report_cards(store):
     assert coforge["matched"] and coforge["passed"] == coforge["total"] == 5 and not coforge["excluded"]
     sales = next(c for c in coforge["checks"] if c["field"] == "sales_qoq")
     assert sales["now"] == 6171.0 and sales["base"] == 5528.0 and sales["pass"]
+    sales_line = next(m for m in coforge["metrics"] if m["key"] == "sales")
+    assert (sales_line["now"], sales_line["prev"]) == (6171.0, 5528.0)
+    assert sales_line["qoq"] == pytest.approx(11.63, abs=0.01) and sales_line["yoy"] == pytest.approx(53.66, abs=0.01)
+    assert sales_line["ago"] == pytest.approx(6171 / 1.5366, rel=0.001)
     bank = cards["HDFCBANK"]
     assert bank["excluded"] and not bank["matched"]  # EBITDA/OPM base <= 0
     assert result["reported"][-1]["symbol"] == "HDFCBANK"  # not-comparable sorted last

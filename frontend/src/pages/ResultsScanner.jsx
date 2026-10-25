@@ -566,7 +566,7 @@ export default function ResultsScanner() {
                   </button>
                 ))}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 520px), 1fr))", gap: 16 }}>
                 {pagedCards.map((c) => (
                   <ReportCard key={c.symbol} card={c} quarter={result.quarter} onOpen={(symbol) => navigate(`/markets/research?symbol=${encodeURIComponent(symbol)}`)} />
                 ))}
@@ -760,8 +760,31 @@ function Lookup({ result, text, onText, hits, card, onPick, onOpen }) {
   );
 }
 
+// Which headline line a condition is about: profit_qoq -> net_profit.
+const checkMetric = (field) => {
+  const base = field.replace(/_(qoq|yoy)$/, "");
+  return base === "profit" ? "net_profit" : base;
+};
+
 function ReportCard({ card, quarter, onOpen }) {
-  const allQoq = card.checks.every((k) => checkBack(k.field) === 1);
+  const lineKeys = card.metrics.map((m) => m.key);
+  const extra = card.checks.filter((k) => !lineKeys.includes(checkMetric(k.field)));
+  const resultBadges = (checks) =>
+    checks.length === 0 ? (
+      <span style={{ color: "#A8A29E" }}>—</span>
+    ) : (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+        {checks.map((k, i) => (
+          <span key={i} style={card.excluded && k.actual === null ? GREY_BADGE : k.pass ? PASS_BADGE : FAIL_BADGE}>
+            {checks.length > 1 ? (checkBack(k.field) === 4 ? "YoY " : checkBack(k.field) === 1 ? "QoQ " : "") : ""}
+            {card.excluded && k.actual === null ? "—" : k.pass ? "Pass" : "Fail"}
+          </span>
+        ))}
+      </div>
+    );
+  const ruleNote = (checks) =>
+    checks.map((k) => `${checkBack(k.field) === 4 ? "YoY " : checkBack(k.field) === 1 ? "QoQ " : ""}${ruleText(k)}`).join(" · ");
+  const num = (v, key) => (key === "opm" && v !== null && v !== undefined ? `${Number(v).toFixed(1)}%` : fmtNum(v));
   return (
     <article style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
@@ -772,40 +795,47 @@ function ReportCard({ card, quarter, onOpen }) {
         <span style={scoreBadge(card)}>{scoreText(card)}</span>
       </div>
       <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
           <thead>
             <tr>
               <th style={thStyle("left")}>Metric (₹ Cr)</th>
               <th style={thStyle()}>{shiftQuarter(quarter, 0)}</th>
-              <th style={thStyle()}>{allQoq ? shiftQuarter(quarter, 1) : "Base"}</th>
-              <th style={thStyle()}>Change</th>
+              <th style={thStyle()}>{shiftQuarter(quarter, 1)}</th>
+              <th style={thStyle()}>QoQ</th>
+              <th style={thStyle()}>{shiftQuarter(quarter, 4)}</th>
+              <th style={thStyle()}>YoY</th>
               <th style={thStyle("center")}>Result</th>
             </tr>
           </thead>
           <tbody>
-            {card.checks.map((k, i) => {
-              const back = checkBack(k.field);
+            {card.metrics.map((m) => {
+              const checks = card.checks.filter((k) => checkMetric(k.field) === m.key);
               return (
-                <tr key={i}>
-                  <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500 })}>
-                    {k.label.replace(/ %$/, "")} <span style={{ color: C.dim, fontWeight: 400, fontSize: 12 }}>{ruleText(k)}</span>
+                <tr key={m.key}>
+                  <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500, fontSize: 13 })}>
+                    {m.label} {checks.length > 0 && <span style={{ color: C.dim, fontWeight: 400, fontSize: 12 }}>{ruleNote(checks)}</span>}
                   </td>
-                  <td style={tdStyle({ fontSize: 12 })}>{fmtNum(k.now)}</td>
-                  <td style={tdStyle({ fontSize: 12, color: C.dim })} title={back ? shiftQuarter(quarter, back) : ""}>
-                    {fmtNum(k.base)}{!allQoq && back ? <span style={{ fontSize: 11 }}> · {shiftQuarter(quarter, back)}</span> : null}
-                  </td>
-                  <td style={tdStyle({ fontSize: 12, fontWeight: 600, color: changeColor(k.actual) })}>{fmtChange(k)}</td>
-                  <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}>
-                    <span style={card.excluded ? GREY_BADGE : k.pass ? PASS_BADGE : FAIL_BADGE}>{card.excluded && k.actual === null ? "—" : k.pass ? "Pass" : "Fail"}</span>
-                  </td>
+                  <td style={tdStyle({ fontSize: 12 })}>{num(m.now, m.key)}</td>
+                  <td style={tdStyle({ fontSize: 12, color: C.dim })}>{num(m.prev, m.key)}</td>
+                  <td style={tdStyle({ fontSize: 12, fontWeight: 600, color: changeColor(m.qoq) })}>{fmtPct(m.qoq)}</td>
+                  <td style={tdStyle({ fontSize: 12, color: C.dim })}>{num(m.ago, m.key)}</td>
+                  <td style={tdStyle({ fontSize: 12, fontWeight: 600, color: changeColor(m.yoy) })}>{fmtPct(m.yoy)}</td>
+                  <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}>{resultBadges(checks)}</td>
                 </tr>
               );
             })}
+            {extra.map((k, i) => (
+              <tr key={`x${i}`}>
+                <td style={tdStyle({ textAlign: "left", fontFamily: SANS, fontWeight: 500, fontSize: 13 })}>
+                  {k.label} <span style={{ color: C.dim, fontWeight: 400, fontSize: 12 }}>{ruleText(k)}</span>
+                </td>
+                <td style={tdStyle({ fontSize: 12 })}>{fmtNum(k.actual)}</td>
+                <td colSpan={4} style={tdStyle({ fontSize: 12, color: "#A8A29E" })}></td>
+                <td style={tdStyle({ textAlign: "center", fontFamily: SANS })}>{resultBadges([k])}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
-      </div>
-      <div style={{ padding: "10px 14px", fontSize: 12, color: C.dim, borderTop: "1px solid #F0EEE9", marginTop: "auto" }}>
-        Profit YoY <span style={{ fontFamily: MONO, fontWeight: 600, color: changeColor(card.profit_yoy) }}>{fmtPct(card.profit_yoy)}</span>
       </div>
     </article>
   );
