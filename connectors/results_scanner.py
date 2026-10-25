@@ -137,8 +137,64 @@ def parse_company_page(html):
         for a in peers.select("p.sub a"):
             if a.get("title") in ("Broad Sector", "Sector", "Broad Industry", "Industry"):
                 industry.append(a.get_text(strip=True))
+    announcements = []
+    docs = soup.find("section", id="documents")
+    heading = docs.find("h3", string=lambda t: t and "Announcements" in t) if docs else None
+    box = heading.find_parent("div") if heading else None
+    for li in box.select("li") if box else []:
+        stamp = li.find("time")
+        if stamp and stamp.get("datetime"):
+            announcements.append({"at": stamp["datetime"][:10], "text": " ".join(li.get_text(" ", strip=True).split())})
     h1 = soup.find("h1")
-    return {"quarters": quarters, "industry": industry, "name": h1.get_text(strip=True) if h1 else ""}
+    return {"quarters": quarters, "industry": industry, "announcements": announcements, "name": h1.get_text(strip=True) if h1 else ""}
+
+
+# Announcement date of a quarter's results, best effort: screener lists only
+# a company's last 5 announcements, and the results PDF link is disallowed
+# by its robots.txt. A filing that is clearly the results is exact; a later
+# echo of them (earnings call, transcript, newspaper notice) is approximate.
+RESULT_FILING = re.compile(r"financial results|results? (approved|declared|for the (quarter|period))|outcome of (the )?board meeting", re.I)
+RESULT_MENTION = re.compile(r"\bresults?\b|earnings|\bQ[1-4]\s*(FY|-)\s*\d{2}", re.I)
+LATER_ECHO = re.compile(r"newspaper|transcript|audio|recording|analyst|investor meet|con(ference )?call", re.I)
+ANNOUNCE_WINDOW_DAYS = 100
+
+
+def quarter_end(key):
+    year, month = int(key[:4]), int(key[5:])
+    nxt = datetime.date(year + (month == 12), month % 12 + 1, 1)
+    return nxt - datetime.timedelta(days=1)
+
+
+def announced_from_filings(announcements, quarter):
+    """{"date", "approx"} for `quarter` from the announcements list, or None."""
+    end = quarter_end(quarter)
+    exact, rough = [], []
+    for a in announcements or []:
+        try:
+            day = datetime.date.fromisoformat(a["at"])
+        except (KeyError, ValueError):
+            continue
+        if not (end < day <= end + datetime.timedelta(days=ANNOUNCE_WINDOW_DAYS)):
+            continue
+        text = a.get("text", "")
+        if RESULT_FILING.search(text) and not LATER_ECHO.search(text):
+            exact.append(day)
+        elif RESULT_FILING.search(text) or RESULT_MENTION.search(text):
+            rough.append(day)
+    if exact:
+        return {"date": min(exact).isoformat(), "approx": False}
+    if rough:
+        return {"date": min(rough).isoformat(), "approx": True}
+    return None
+
+
+def merge_announced(old, new):
+    """Keep the better of two dates: exact beats approximate, else earlier."""
+    if not old or not new:
+        return old or new
+    if old["approx"] != new["approx"]:
+        return new if old["approx"] else old
+    return old if old["date"] <= new["date"] else new
 
 
 # ------------------------------------------------------------ data source
@@ -267,8 +323,13 @@ def expected_quarter(today=None):
     return f"{today.year}-{month:02d}"
 
 
+STORE_VERSION = 2  # 2: announcements parsed (announced dates)
+
+
 def needs_fetch(entry, target, now):
     if not entry:
+        return True
+    if entry.get("v", 1) < STORE_VERSION and not entry.get("missing"):
         return True
     age_h = (now - entry.get("fetched_at", 0)) / 3600
     if target in entry.get("quarters", {}):
@@ -301,10 +362,20 @@ def refresh_store(source=None, universe=None, stop=None, max_symbols=None):
         if parsed is None:
             store[symbol] = {"fetched_at": time.time(), "quarters": {}, "missing": True}
             continue
+        today = datetime.date.today().isoformat()
+        known = set((entry or {}).get("quarters", {}))
         first_seen = dict((entry or {}).get("first_seen", {}))
+        announced = dict((entry or {}).get("announced", {}))
         for q in parsed["quarters"]:
-            first_seen.setdefault(q, datetime.date.today().isoformat())
-        store[symbol] = {**parsed, "market_cap": cap, "fetched_at": time.time(), "first_seen": first_seen}
+            first_seen.setdefault(q, today)
+            date = announced_from_filings(parsed.get("announcements"), q)
+            # A quarter that appeared since the last fetch (at most a day
+            # apart) was announced about today.
+            if entry and not entry.get("missing") and q not in known and quarter_end(q).isoformat() < today:
+                date = merge_announced(date, {"date": today, "approx": True})
+            announced[q] = merge_announced(announced.get(q), date)
+        store[symbol] = {**parsed, "market_cap": cap, "fetched_at": time.time(), "first_seen": first_seen,
+                         "announced": {q: d for q, d in announced.items() if d}, "v": STORE_VERSION}
         if fetched % 25 == 0:
             with _store_lock:
                 save_store(store)
@@ -515,7 +586,9 @@ def scan(criteria, quarter=None, store=None, exclude_financials=False, exclude_n
                 text = rule_text(rule)
                 misses[text] = (misses.get(text, (0, rule))[0] + 1, rule)
         matched = evaluate(criteria, metrics)
-        head = {"symbol": symbol, "name": entry.get("name", ""), "reported": entry.get("first_seen", {}).get(quarter), "flags": flags}
+        ann = entry.get("announced", {}).get(quarter)
+        head = {"symbol": symbol, "name": entry.get("name", ""), "announced": ann["date"] if ann else None,
+                "announced_approx": bool(ann and ann["approx"]), "flags": flags}
         if matched:
             rows.append({**head, "basis": entry.get("basis"), **metrics})
         cards.append({**head, "matched": matched, "profit_qoq": _r2(metrics.get("profit_qoq")), "profit_yoy": _r2(metrics.get("profit_yoy")),
@@ -597,7 +670,7 @@ def store_meta(store=None):
 # Bump whenever scan()'s output shape changes, so a deploy never serves a
 # cached result in the old shape (it broke the report cards for up to the
 # cache TTL after the 2026-10-25 deploys).
-SCAN_RESULT_VERSION = 3
+SCAN_RESULT_VERSION = 4
 
 
 def cached_scan_criteria(criteria, quarter, **filters):

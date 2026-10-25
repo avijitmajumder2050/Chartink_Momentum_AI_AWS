@@ -52,8 +52,15 @@ runs 09:00–11:00 — and resumes the next day if it doesn't finish.
   quarter) is re-checked only weekly; one that hasn't reported, daily. So
   the first pass over ~1,140 stocks takes ~40–75 min, later ones far less.
 - Store: `.cache/results_scanner_store.json` on the backend instance.
-  "First seen" is the date the refresher first saw a quarter — for the first
-  pass that's the pass date, not the announcement date.
+  Entries carry `"v"`; bumping `STORE_VERSION` makes the next pass
+  re-fetch every company once.
+- **Announced date** (best effort — screener shows only a company's last 5
+  announcements, and the results PDF link is disallowed by its robots.txt):
+  exact from a results filing ("financial results", "results approved",
+  "outcome of board meeting") in that list, using its `<time datetime>`;
+  otherwise approximate (`~` on the page) from the earliest later mention
+  (earnings call, transcript, newspaper notice, "Q2 FY27") or the day the
+  refresher first saw the new quarter; otherwise blank.
 
 ## Metrics and flags
 

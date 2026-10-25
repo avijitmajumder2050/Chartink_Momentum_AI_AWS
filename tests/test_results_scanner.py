@@ -206,7 +206,7 @@ def test_rate_limiter_spacing():
 def test_refresh_skips_already_reported(tmp_path, monkeypatch, store):
     monkeypatch.setattr(rs, "STORE_PATH", str(tmp_path / "store.json"))
     monkeypatch.setattr(rs, "expected_quarter", lambda today=None: Q)
-    rs.save_store({"COFORGE": {**store["COFORGE"], "fetched_at": time.time()}}, rs.STORE_PATH)
+    rs.save_store({"COFORGE": {**store["COFORGE"], "fetched_at": time.time(), "v": rs.STORE_VERSION}}, rs.STORE_PATH)
 
     class Source:
         def __init__(self):
@@ -221,6 +221,8 @@ def test_refresh_skips_already_reported(tmp_path, monkeypatch, store):
     assert src.fetched == ["HCLTECH"] and result["fetched"] == 1
     saved = rs.load_store(rs.STORE_PATH)
     assert saved["HCLTECH"]["market_cap"] == 2.0 and Q in saved["HCLTECH"]["first_seen"]
+    assert saved["HCLTECH"]["announced"][Q] == {"date": "2026-10-12", "approx": False}
+    assert saved["HCLTECH"]["v"] == rs.STORE_VERSION
 
 
 # ------------------------------------------------------------- endpoints
@@ -292,3 +294,24 @@ def test_report_cards(store):
     bank = cards["HDFCBANK"]
     assert bank["excluded"] and not bank["matched"]  # EBITDA/OPM base <= 0
     assert result["reported"][-1]["symbol"] == "HDFCBANK"  # not-comparable sorted last
+
+
+@pytest.mark.parametrize("symbol,expected", [
+    ("HCLTECH", {"date": "2026-10-12", "approx": False}),  # "Q2 FY27 results approved"
+    ("COFORGE", {"date": "2026-10-23", "approx": True}),   # earnings-call note, no results filing listed
+    ("HDFCBANK", {"date": "2026-10-23", "approx": True}),  # only a later transcript mention
+    ("IDEA", None),                                       # no results announcement
+])
+def test_announced_from_filings(store, symbol, expected):
+    assert rs.announced_from_filings(store[symbol]["announcements"], Q) == expected
+
+
+def test_announced_newly_seen_quarter_and_merge():
+    assert rs.merge_announced({"date": "2026-10-23", "approx": True}, {"date": "2026-10-20", "approx": True})["date"] == "2026-10-20"
+    assert rs.merge_announced({"date": "2026-10-23", "approx": False}, {"date": "2026-10-20", "approx": True})["approx"] is False
+    assert rs.announced_from_filings([{"at": "2026-07-01", "text": "Financial Results"}], Q) is None  # before quarter end
+
+
+def test_old_store_entries_are_refetched():
+    assert rs.needs_fetch({"quarters": {Q: {}}, "fetched_at": time.time()}, Q, time.time())
+    assert not rs.needs_fetch({"quarters": {Q: {}}, "fetched_at": time.time(), "v": rs.STORE_VERSION}, Q, time.time())

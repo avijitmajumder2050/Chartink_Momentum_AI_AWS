@@ -29,7 +29,7 @@ const TABS = [
 const PAGE_SIZES = [10, 50, 100];
 const COLUMNS = [
   ["symbol", "Company", "text"],
-  ["reported", "First seen", "text"],
+  ["announced", "Announced", "date"],
   ["sales_qoq", "Sales QoQ", "pct"],
   ["ebitda_qoq", "EBITDA QoQ", "pct"],
   ["opm_qoq", "OPM QoQ", "pct"],
@@ -63,6 +63,15 @@ function decodeState(text) {
     return null;
   }
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtAnnounced = (row) => {
+  if (!row.announced) return "—";
+  const [, m, d] = row.announced.split("-").map(Number);
+  return `${row.announced_approx ? "~" : ""}${d} ${MONTHS[m - 1]}`;
+};
+const announcedTitle = (row) =>
+  !row.announced ? "Announcement date not found" : row.announced_approx ? "Approximate: from a later results mention or when the result was first seen" : "From the results filing";
 
 const fmtPct = (v) =>
   v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${Number(v).toLocaleString("en-IN", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -405,11 +414,11 @@ export default function ResultsScanner() {
     let head, lines;
     if (tab === "cards") {
       const checks = cards[0]?.checks || [];
-      head = ["Symbol", "Company", "First seen", "Passed", "Of", "Excluded", ...checks.map((k) => `${k.label} ${k.operator} ${Array.isArray(k.value) ? k.value.join("-") : k.value}`), "Flags"];
-      lines = cards.map((c) => [c.symbol, c.name, c.reported || "", c.passed, c.total, c.excluded ? "yes" : "", ...c.checks.map((k) => (k.actual ?? "")), c.flags.join(" ")]);
+      head = ["Symbol", "Company", "Announced", "Passed", "Of", "Excluded", ...checks.map((k) => `${k.label} ${k.operator} ${Array.isArray(k.value) ? k.value.join("-") : k.value}`), "Flags"];
+      lines = cards.map((c) => [c.symbol, c.name, fmtAnnounced(c), c.passed, c.total, c.excluded ? "yes" : "", ...c.checks.map((k) => (k.actual ?? "")), c.flags.join(" ")]);
     } else {
-      head = ["Symbol", "Company", "First seen", ...COLUMNS.slice(2, 9).map((c) => c[1] + " %"), "Flags"];
-      lines = rows.map((r) => [r.symbol, r.name, r.reported || "", ...COLUMNS.slice(2, 9).map((c) => (r[c[0]] ?? "") === "" ? "" : Number(r[c[0]]).toFixed(2)), r.flags.join(" ")]);
+      head = ["Symbol", "Company", "Announced", ...COLUMNS.slice(2, 9).map((c) => c[1] + " %"), "Flags"];
+      lines = rows.map((r) => [r.symbol, r.name, fmtAnnounced(r), ...COLUMNS.slice(2, 9).map((c) => (r[c[0]] ?? "") === "" ? "" : Number(r[c[0]]).toFixed(2)), r.flags.join(" ")]);
     }
     const csv = [head, ...lines].map((l) => l.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -603,7 +612,7 @@ export default function ResultsScanner() {
                         <tr key={i}>
                           {COLUMNS.map(([key]) => (
                             <td key={key} style={{ padding: "12px", borderBottom: "1px solid #F0EEE9" }}>
-                              <div style={{ height: 12, borderRadius: 4, background: C.soft, width: key === "symbol" ? 120 : 56, marginLeft: key === "symbol" || key === "reported" || key === "flags" ? 0 : "auto" }} />
+                              <div style={{ height: 12, borderRadius: 4, background: C.soft, width: key === "symbol" ? 120 : 56, marginLeft: key === "symbol" || key === "announced" || key === "flags" ? 0 : "auto" }} />
                             </td>
                           ))}
                         </tr>
@@ -613,13 +622,13 @@ export default function ResultsScanner() {
                           onMouseEnter={(e) => (e.currentTarget.style.background = "#F7F6FF")} onMouseLeave={(e) => (e.currentTarget.style.background = "")}>
                           {COLUMNS.map(([key, , type]) => (
                             <td key={key} style={{ fontFamily: type === "pct" ? MONO : SANS, fontSize: type === "pct" ? 13 : 14, textAlign: type === "pct" ? "right" : "left", padding: "10px 12px", borderBottom: "1px solid #F0EEE9", whiteSpace: "nowrap",
-                              color: type === "pct" ? (r[key] === null || r[key] === undefined ? "#A8A29E" : r[key] < 0 ? C.down : C.up) : key === "reported" ? C.dim : C.ink,
+                              color: type === "pct" ? (r[key] === null || r[key] === undefined ? "#A8A29E" : r[key] < 0 ? C.down : C.up) : key === "announced" ? C.dim : C.ink,
                               fontWeight: key === "symbol" || key === sort.key ? 600 : 400 }}>
                               {key === "symbol" ? (
                                 <Link to={`/markets/research?symbol=${encodeURIComponent(r.symbol)}`} onClick={(e) => e.stopPropagation()} style={{ color: C.ink }} title={r.name}>
                                   {r.symbol}
                                 </Link>
-                              ) : type === "pct" ? fmtPct(r[key]) : type === "flags" ? <FlagBadges flags={r.flags} tips={meta?.flags || {}} /> : r[key] || "—"}
+                              ) : type === "pct" ? fmtPct(r[key]) : type === "flags" ? <FlagBadges flags={r.flags} tips={meta?.flags || {}} /> : type === "date" ? <span title={announcedTitle(r)}>{fmtAnnounced(r)}</span> : r[key] || "—"}
                             </td>
                           ))}
                         </tr>
@@ -772,7 +781,9 @@ function ReportCard({ card, quarter, onOpen }) {
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: 8, padding: "12px 14px", background: "#F5F4F0" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(card.symbol); }} style={{ all: "unset", cursor: "pointer", fontWeight: 700, fontSize: 15, color: C.accentInk }}>{card.name || card.symbol} →</button>
-          <span style={{ fontSize: 12, color: C.dim }}>{card.symbol}{card.reported ? ` · first seen ${card.reported}` : ""} · {verdict(card)}</span>
+          <span style={{ fontSize: 12, color: C.dim }}>
+            {card.symbol} · <span title={announcedTitle(card)}>Announced {fmtAnnounced(card)}</span> · {verdict(card)}
+          </span>
         </div>
         <span style={scoreBadge(card)}>{scoreText(card)}</span>
       </div>
