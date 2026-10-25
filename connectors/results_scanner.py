@@ -445,7 +445,7 @@ def _rules(*items):
     return [{"field": f, "operator": ">", "value": v} for f, v in items]
 
 
-QOQ_MOMENTUM = _rules(("sales_qoq", 2.6), ("profit_qoq", 8), ("ebitda_qoq", 8), ("opm_qoq", 3), ("eps_qoq", 6))
+QOQ_MOMENTUM = _rules(("sales_qoq", 2.6), ("profit_qoq", 8), ("ebitda_qoq", 5), ("opm_qoq", 2), ("eps_qoq", 6))
 PRESETS = {
     "qoq_momentum": {"name": "QoQ Momentum", "criteria": {"op": "AND", "rules": QOQ_MOMENTUM}},
     "qoq_10_10": {"name": "QoQ 10/10", "criteria": {"op": "AND", "rules": _rules(("sales_qoq", 10), ("profit_qoq", 10))}},

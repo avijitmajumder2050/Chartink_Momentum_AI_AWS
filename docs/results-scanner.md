@@ -10,7 +10,7 @@ matches.
 
 | Preset | Conditions |
 |---|---|
-| QoQ Momentum | Sales QoQ > 2.6, Profit QoQ > 8, EBITDA QoQ > 8, OPM QoQ > 3, EPS QoQ > 6 |
+| QoQ Momentum | Sales QoQ > 2.6, Profit QoQ > 8, EBITDA QoQ > 5, OPM QoQ > 2, EPS QoQ > 6 |
 | QoQ 10/10 | Sales QoQ > 10, Profit QoQ > 10 |
 | QoQ + YoY strong | QoQ Momentum + Profit YoY > 0 |
 

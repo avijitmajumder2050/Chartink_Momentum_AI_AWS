@@ -41,10 +41,11 @@ const COLUMNS = [
 let nextId = 1;
 const withIds = (node) =>
   "rules" in node ? { ...node, id: nextId++, rules: node.rules.map(withIds) } : { ...node, id: nextId++ };
+const toNumber = (v) => (typeof v === "number" ? v : v === "" || v === "-" || v === "." ? NaN : Number(v));
 const stripIds = (node) =>
   "rules" in node
     ? { op: node.op, rules: node.rules.map(stripIds) }
-    : { field: node.field, operator: node.operator, value: node.value };
+    : { field: node.field, operator: node.operator, value: Array.isArray(node.value) ? node.value.map(toNumber) : toNumber(node.value) };
 
 function encodeState(state) {
   try {
@@ -116,7 +117,13 @@ function Segmented({ options, value, onChange, small, label }) {
 
 function RuleRow({ rule, fields, operators, locked, onChange, onRemove }) {
   const between = rule.operator === "between";
-  const num = (s) => (s === "" || s === "-" ? s : Number(s));
+  // Keep what's typed (digits, one leading minus, one decimal point) so a
+  // fraction like 2.5 can be entered; it's converted to a number on Run.
+  const num = (s) => {
+    const cleaned = s.replace(/[^0-9.-]/g, "").replace(/(?!^)-/g, "");
+    const [whole, ...rest] = cleaned.split(".");
+    return rest.length ? `${whole}.${rest.join("")}` : whole;
+  };
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
       <select aria-label="Field" disabled={locked} value={rule.field} onChange={(e) => onChange({ ...rule, field: e.target.value })} style={{ ...control, flex: "2 1 180px" }}>
@@ -232,7 +239,7 @@ function FlagBadges({ flags, tips }) {
 function hasInvalid(node) {
   if ("rules" in node) return node.rules.length === 0 || node.rules.some(hasInvalid);
   const vals = Array.isArray(node.value) ? node.value : [node.value];
-  return vals.some((v) => typeof v !== "number" || Number.isNaN(v));
+  return vals.some((v) => !Number.isFinite(toNumber(v)));
 }
 
 export default function ResultsScanner() {
