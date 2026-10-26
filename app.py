@@ -2666,6 +2666,9 @@ def _todays_breakout_entries(today_str):
 
 
 def _start_auto_breakout_day(today_str):
+    # Before qualifying: yesterday's entries would otherwise block today's
+    # picks as "already in your campaign entries".
+    _expire_old_breakout_entries(today_str)
     restored = _load_auto_breakout_state(today_str)
     if restored:
         _auto_breakout_state.update(restored)
@@ -2965,7 +2968,39 @@ def _breakout_race_pending(entries, today_str):
     ]
 
 
+_breakout_entries_expired_on = {"date": None}
+
+
+def _expire_old_breakout_entries(today_str):
+    """Breakout-race entries are intraday: deactivate any from an earlier
+    day, once per day. Left active they blocked the stock from qualifying
+    again ("already in your campaign entries" - GNA, 10-21 to 10-26) and
+    kept the alert bot sending milestones off a days-old entry price
+    ("GNA hit 1:1 target" on 10-26 from its 10-21 entry). Manual/swing
+    entries (other sources) are multi-day and left alone."""
+    if _breakout_entries_expired_on["date"] == today_str:
+        return
+    try:
+        entries = campaign_connector.list_entries(active_only=True)
+    except Exception as exc:
+        print(f"[breakout-cleanup] couldn't list entries: {exc}", file=sys.stderr)
+        return
+    stale = [e for e in entries if e.get("source") == "first_minute_movers" and (_intent_trade_date(e) or today_str) < today_str]
+    failed = 0
+    for e in stale:
+        try:
+            campaign_connector.update_entry(e["id"], active=False, note=(e.get("note") or "") + f" [closed - intraday entry from {_intent_trade_date(e)}, expired {today_str}]")
+        except Exception as exc:
+            failed += 1
+            print(f"[breakout-cleanup] couldn't expire {e['symbol']}: {exc}", file=sys.stderr)
+    if not failed:
+        _breakout_entries_expired_on["date"] = today_str  # a failure retries on the next call
+    if stale:
+        print(f"[breakout-cleanup] {today_str}: expired {len(stale) - failed} old intraday entries {sorted(e['symbol'] for e in stale)}", file=sys.stderr)
+
+
 def _check_and_notify_active_entries():
+    _expire_old_breakout_entries(datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d"))
     entries = campaign_connector.list_entries(active_only=True)
     # Stocks in the breakout race are the race's to trigger, not this
     # bot's — otherwise every racer already above its entry got its own
