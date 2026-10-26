@@ -28,6 +28,7 @@ import chartink_stoch_backtest as stoch_mod
 import dhan_ema_breakout as dhan_ema_mod
 import first_minute_movers as first_minute_mod
 import pivot_pullback_scanner as pivot_pullback_mod
+import opening_base_scanner as opening_base_mod
 import mock_data
 from connectors import ai_verdict, auth_verify, cache, campaign_ai, campaign_connector, chart_connector, cognito_connector, dhan_connector, fcm_connector, fundamentals_connector, ipo_connector, marketsmith_connector, mutual_funds_connector, news_connector, order_intent_connector, razorpay_connector, results_scanner, secrets, sector_connector, stock_screener_ai, subscription_connector
 from connectors.format_utils import pct_str
@@ -381,8 +382,15 @@ def _pivot_locked_picks():
     return _pivot_watch_state.get("picks", []) if _pivot_watch_state["date"] == today else []
 
 
+def _pivot_order_failed():
+    """Today's pivot picks whose auto-order failed -> {symbol: "HH:MM"},
+    so pick_daily_trade hands the day over to the next setup."""
+    today = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
+    return _pivot_watch_state.get("order_failed") or {} if _pivot_watch_state["date"] == today else {}
+
+
 def run_pivot_pullback():
-    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks())
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks(), order_failed=_pivot_order_failed())
     return _pivot_pullback_payload(df, breadth)
 
 
@@ -427,6 +435,51 @@ def _pivot_pullback_payload(df, breadth):
             _col("15m Open", "15m Open", "num"),
             _col("15m Close", "15m Close", "num"),
             _col("15m Value Cr", "15m Value (₹ cr)", "num"),
+        ],
+        "rows": rows,
+    }
+
+
+def run_opening_base():
+    df, summary = opening_base_mod.get_opening_base_setups()
+    return _opening_base_payload(df, summary)
+
+
+def _opening_base_payload(df, summary):
+    """Scanner-page result for one opening-base scan — shared by the
+    manual run and the opening-base watch bot's cached runs."""
+    if df.empty:
+        raise RuntimeError(
+            f"No opening base today among {summary['scanned']} F&O stocks - the 4-candle base completes at 09:35 IST"
+        )
+    rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+    triggered = df["Trigger Time"].notna()
+    closed = df["R"].notna() & df["Status"].isin(["Target Hit", "SL Hit", "Trailed Out", "Time Exit"])
+    return {
+        "stats": [
+            _stat("Stocks Scanned", summary["scanned"]),
+            _stat("Opening Bases", len(df)),
+            _stat("Breakouts", int(triggered.sum())),
+            _stat("Closed R", f"{df.loc[closed, 'R'].sum():+.1f}R" if closed.any() else "—"),
+            _stat("First Breakout", summary["pick"] or "—"),
+        ],
+        "columns": [
+            _col("Stock Name", "Stock", "symbol"),
+            _col("Status", "Status"),
+            _col("Entry", "Entry", "num"),
+            _col("SL", "SL (C4 low)", "num"),
+            _col("Risk %", "Risk %", "pct"),
+            _col("Target", f"Target (1:{opening_base_mod.TARGET_R_MULTIPLE})", "num"),
+            _col("LTP", "LTP", "num"),
+            _col("Trigger Time", "Triggered"),
+            _col("Exit Time", "Exit"),
+            _col("Exit Price", "Exit Price", "num"),
+            _col("R", "R", "num"),
+            _col("Trail SL", "Trail SL", "num"),
+            _col("Base High", "Base High", "num"),
+            _col("Base Low", "Base Low", "num"),
+            _col("Range %", "Range %", "pct"),
+            _col("C1 Value Cr", "1st Candle (₹ cr)", "num"),
         ],
         "rows": rows,
     }
@@ -484,6 +537,18 @@ SCANNERS = {
             "its high"
         ),
         "run": run_pivot_pullback,
+    },
+    "opening_base": {
+        "name": "Opening Base Breakout (BSE pattern)",
+        "description": (
+            "F&O stocks (uploads/fno_mapping.csv). First four 5-min "
+            "candles: a strong green opening drive, two pullback candles "
+            "inside it, a higher-low 4th candle back at its high, range "
+            "<= 2.5%, 1st candle traded >= Rs 5 cr. Buy the break of the 4-candle high from 09:35 to "
+            "10:00, SL the 4th candle's low, 1:5 target with the SL "
+            "trailing 0.5R - alerts only, no auto-order"
+        ),
+        "run": run_opening_base,
     },
 }
 
@@ -2579,12 +2644,11 @@ def _start_auto_breakout_day(today_str):
         _auto_breakout_state.update(restored)
         print(f"[auto-breakout] {today_str}: resumed saved state after restart (done={restored['done']}, symbols={restored['symbols']})", file=sys.stderr)
         return
+    # No "today's winner already triggered -> done" backstop here any
+    # more: a winner whose order failed doesn't end the day.
+    # _auto_create_breakout_alerts checks _day_trade_status (which falls
+    # back to today's order intents) before every tick instead.
     _auto_breakout_state.update(date=today_str, done=False, symbols=None, resolved=set(), executor_prewarmed=False)
-    todays = _todays_breakout_entries(today_str)
-    if any("entry_triggered" in (e.get("milestones_notified") or []) for e in todays):
-        # Today's race already has a winner — never qualify more stocks.
-        _auto_breakout_state["done"] = True
-        print(f"[auto-breakout] {today_str}: no saved state, but today's winner already triggered — nothing more to do today", file=sys.stderr)
 
 # The dedicated-IP order-executor pipeline (trading-bot-algo polling
 # quantile-order-intents) has been built and end-to-end tested against
@@ -2620,9 +2684,13 @@ def _auto_create_breakout_alerts():
         _start_auto_breakout_day(today_str)
 
     if not _auto_breakout_state["done"]:
-        taken = _day_trade_taken(today_str)
-        if taken and taken["strategy"] != "breakout":
+        status, taken = _day_trade_status(today_str)
+        if status == "placed":
             _stop_breakout_for_day(today_str, taken)
+        elif status == "pending":
+            # Today's order is on its way - qualify more only if it fails,
+            # so a late stock can't become a solo watch beside a live trade.
+            return
 
     if _auto_breakout_state["done"]:
         return
@@ -2973,12 +3041,20 @@ BREAKOUT_WATCH_INTERVAL_SECONDS = 60
 #
 # The breakout race and the pivot bot share one Dhan trade per day:
 # whichever triggers first claims it (_claim_day_trade) and places the
-# order, and the other stops for the rest of the day — no more alerts or
-# orders. Both run in this one process, so a lock settles a same-moment
-# race; the claim is saved to .cache/ so a restart can't forget it, and
-# today's order intents back that up when the file is missing (e.g. a
-# freshly launched instance).
+# order. While that order is on its way the other waits; once its entry
+# fills on Dhan the other stops for the rest of the day — no more alerts
+# or orders. If trading-bot-algo fails the order instead (e.g. APOLLO
+# 2026-10-26: price was back under the entry when it went to place it)
+# the claim is released, and the next eligible breakout or pivot stock
+# can take the day (_day_trade_status). Both run in this one process, so
+# a lock settles a same-moment race; the claim is saved to .cache/ so a
+# restart can't forget it, and today's order intents back that up when
+# the file is missing (e.g. a freshly launched instance).
 # ============================================================
+
+# A claim with no order intent behind it this long after it was made
+# (auto-order off, or no security id) counts as the day's trade anyway.
+DAY_TRADE_NO_INTENT_GRACE_SECONDS = 300
 
 _day_trade_lock = threading.Lock()
 _day_trade = {"date": None, "taken": None}
@@ -3002,9 +3078,24 @@ def _load_day_trade(date_str):
             # Not marked loaded, so the next call retries the lookup.
             print(f"[day-trade] couldn't read order intents: {exc}", file=sys.stderr)
             return
-        today = [i for i in intents if _intent_trade_date(i) == date_str]
-        taken = {"strategy": today[0].get("strategy") or "breakout", "symbol": today[0].get("symbol")} if today else None
+        today = [i for i in intents if _intent_trade_date(i) == date_str and i.get("status") != "failed"]
+        taken = {
+            "strategy": today[0].get("strategy") or "breakout", "symbol": today[0].get("symbol"),
+            "entry_id": today[0].get("entry_id"), "since": today[0].get("created_at"),
+        } if today else None
     _day_trade.update(date=date_str, taken=taken)
+
+
+def _save_day_trade(date_str):
+    """Call with _day_trade_lock held."""
+    path = _day_trade_path(date_str)
+    try:
+        os.makedirs(AUTO_BREAKOUT_STATE_DIR, exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(_day_trade["taken"], fh)
+        os.replace(path + ".tmp", path)
+    except OSError as exc:
+        print(f"[day-trade] couldn't save claim: {exc}", file=sys.stderr)
 
 
 def _day_trade_taken(date_str):
@@ -3014,29 +3105,112 @@ def _day_trade_taken(date_str):
         return _day_trade["taken"] if _day_trade["date"] == date_str else None
 
 
-def _claim_day_trade(date_str, strategy, symbol):
-    """True if `strategy` now owns today's trade — False if it's taken."""
+def _claim_day_trade(date_str, strategy, symbol, entry_id):
+    """True if `strategy` now owns today's trade — False if it's taken.
+    entry_id is the order intent's key, so _day_trade_status can follow
+    the order."""
     with _day_trade_lock:
         _load_day_trade(date_str)
         if _day_trade["taken"]:
             return False
-        taken = {"strategy": strategy, "symbol": symbol}
+        taken = {"strategy": strategy, "symbol": symbol, "entry_id": entry_id,
+                 "since": datetime.datetime.utcnow().isoformat()}
         _day_trade.update(date=date_str, taken=taken)
-        path = _day_trade_path(date_str)
-        try:
-            os.makedirs(AUTO_BREAKOUT_STATE_DIR, exist_ok=True)
-            with open(path + ".tmp", "w", encoding="utf-8") as fh:
-                json.dump(taken, fh)
-            os.replace(path + ".tmp", path)
-        except OSError as exc:
-            print(f"[day-trade] couldn't save claim: {exc}", file=sys.stderr)
+        _save_day_trade(date_str)
         print(f"[day-trade] {date_str}: {strategy} took today's trade ({symbol})", file=sys.stderr)
         return True
 
 
+def _auto_order_filled(intent):
+    """Has the Dhan super order trading-bot-algo placed for this intent
+    filled its entry? (The intent itself stays "claimed" for the whole
+    life of the trade — see _match_auto_order.)"""
+    try:
+        dhan_orders = dhan_connector.get_super_orders()
+    except Exception as exc:
+        print(f"[day-trade] couldn't read Dhan orders: {exc}", file=sys.stderr)
+        return False
+    order = dhan_orders.get(_match_auto_order(intent, dhan_orders))
+    return bool(order) and (bool(_num(order.get("filledQty"))) or (order.get("orderStatus") or "").upper() == "TRADED")
+
+
+def _day_trade_status(date_str):
+    """("free" | "pending" | "placed", taken). pending: today's order is
+    on its way and could still fail. placed: its entry filled (or there's
+    no order to wait on) — the day is done. A failed order is released
+    here, which makes the day free again."""
+    taken = _day_trade_taken(date_str)
+    if not taken:
+        return "free", None
+    if taken.get("placed") or not taken.get("entry_id"):
+        return "placed", taken
+    try:
+        intent = order_intent_connector.get_intent(taken["entry_id"])
+    except Exception as exc:
+        print(f"[day-trade] couldn't read order intent for {taken['symbol']}: {exc}", file=sys.stderr)
+        return "pending", taken
+    status = (intent or {}).get("status")
+    if status == "failed":
+        if _release_day_trade(date_str, taken):
+            _on_day_trade_failed(date_str, taken)
+        return "free", None
+    if intent is None:
+        try:
+            age = (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(taken.get("since"))).total_seconds()
+        except (TypeError, ValueError):
+            age = DAY_TRADE_NO_INTENT_GRACE_SECONDS + 1
+        if age <= DAY_TRADE_NO_INTENT_GRACE_SECONDS:
+            return "pending", taken
+    elif status == "pending" or (status == "claimed" and not _auto_order_filled(intent)):
+        return "pending", taken
+    with _day_trade_lock:
+        if _day_trade["date"] == date_str and _day_trade["taken"] and _day_trade["taken"].get("entry_id") == taken["entry_id"]:
+            _day_trade["taken"]["placed"] = True
+            _save_day_trade(date_str)
+    print(f"[day-trade] {date_str}: {taken['strategy']} order for {taken['symbol']} placed - day done", file=sys.stderr)
+    return "placed", taken
+
+
+def _release_day_trade(date_str, taken):
+    """Frees today's trade if `taken` still holds it. True if this call
+    released it (so the failure is handled once, whichever bot saw it)."""
+    with _day_trade_lock:
+        current = _day_trade["taken"] if _day_trade["date"] == date_str else None
+        if not current or current.get("entry_id") != taken.get("entry_id"):
+            return False
+        _day_trade["taken"] = None
+        _save_day_trade(date_str)
+        return True
+
+
+def _on_day_trade_failed(date_str, taken):
+    """Today's order failed: drop that stock so its bot moves on to the
+    next eligible one."""
+    symbol = taken["symbol"]
+    print(f"[day-trade] {date_str}: {taken['strategy']} order for {symbol} failed - day free again, next eligible stock can take it", file=sys.stderr)
+    if taken["strategy"] == "breakout":
+        try:
+            entry = next((e for e in campaign_connector.list_entries(active_only=True) if e["id"] == taken["entry_id"]), None)
+            if entry:
+                campaign_connector.update_entry(
+                    entry["id"], active=False,
+                    note=(entry.get("note") or "") + " [dropped - auto-order failed, race moved to the next stock]",
+                )
+        except Exception as exc:
+            print(f"[breakout-watch] couldn't drop {symbol} after failed order: {exc}", file=sys.stderr)
+    elif taken["strategy"] == "pivot" and _pivot_watch_state["date"] == date_str:
+        state = _pivot_watch_state
+        state["order_failed"][symbol] = datetime.datetime.now(chart_connector.IST).strftime("%H:%M")
+        state["ordered"] = False
+        if state["armed"] and state["armed"]["symbol"] == symbol:
+            state["armed"] = None
+        _save_pivot_watch_state()
+
+
 def _stop_breakout_for_day(today_str, taken):
-    """The pivot bot took today's trade: cancel every breakout candidate
-    still waiting on entry and stop qualifying new ones."""
+    """Today's trade was placed (by the race's winner or the pivot bot):
+    cancel every breakout candidate still waiting on entry and stop
+    qualifying new ones."""
     by = f"{taken['strategy']} ({taken['symbol']})" if taken else "another strategy"
     try:
         entries = campaign_connector.list_entries(active_only=True)
@@ -3059,10 +3233,12 @@ def _stop_breakout_for_day(today_str, taken):
 
 def _breakout_watch_once():
     today_str = datetime.datetime.now(chart_connector.IST).strftime("%Y-%m-%d")
-    taken = _day_trade_taken(today_str)
-    if taken and taken["strategy"] != "breakout":
+    status, taken = _day_trade_status(today_str)
+    if status == "placed":
         _stop_breakout_for_day(today_str, taken)
         return
+    if status == "pending":
+        return  # today's order is on its way - the rest wait in case it fails
     entries = campaign_connector.list_entries(active_only=True)
     pending = _breakout_race_pending(entries, today_str)
     if not pending:
@@ -3114,9 +3290,8 @@ def _breakout_watch_once():
     entry_price = float(entry["entry_price"])
     sl_price = float(entry["sl_price"]) if entry.get("sl_price") is not None else None
 
-    if not _claim_day_trade(today_str, "breakout", entry["symbol"]):
-        _stop_breakout_for_day(today_str, _day_trade_taken(today_str))
-        return
+    if not _claim_day_trade(today_str, "breakout", entry["symbol"], entry["id"]):
+        return  # the pivot bot claimed it this moment - next tick sees how its order went
 
     # One breadth reading for both the alert's HALF/FULL line and the
     # order's risk, so the two can't disagree.
@@ -3157,30 +3332,12 @@ def _breakout_watch_once():
     except Exception as exc:
         print(f"[breakout-watch] couldn't persist milestone for {entry['symbol']}: {exc}", file=sys.stderr)
 
-    losers = [e for e in pending if e["id"] != entry["id"]]
-    for loser in losers:
-        try:
-            campaign_connector.update_entry(
-                loser["id"], active=False,
-                note=(loser.get("note") or "") + f" [cancelled - {entry['symbol']} won (strongest 1st candle, entry triggered at {current_price:.2f})]",
-            )
-        except Exception as exc:
-            print(f"[breakout-watch] couldn't deactivate {loser['symbol']}: {exc}", file=sys.stderr)
-
-    # A winner for the day means "only take the first stock that breaks
-    # out" is now decided — also stop the separate qualification process
-    # (_auto_create_breakout_alerts) so a stock still waiting on 2nd-
-    # candle data at this exact moment can't qualify a minute later and
-    # become a brand-new solo watch with nothing left to race against
-    # (it would otherwise go on to trigger its own independent entry,
-    # defeating the whole point of the race). Safe across a day boundary:
-    # _auto_create_breakout_alerts() resets this state itself the moment
-    # it sees a new date.
-    if _auto_breakout_state["date"] == today_str:
-        _auto_breakout_state["done"] = True
-        _save_auto_breakout_state()
-
-    print(f"[breakout-watch] {today_str}: {entry['symbol']} won (strongest 1st candle, entry triggered at {current_price:.2f}) - cancelled {[l['symbol'] for l in losers]}, qualification stopped for today", file=sys.stderr)
+    # The other candidates aren't cancelled yet: they (and qualification)
+    # wait on the winner's order. Once it fills, _day_trade_status says
+    # "placed" and _stop_breakout_for_day cancels them for the day; if it
+    # fails, the winner is dropped and the next strongest leads the race.
+    waiting = [e["symbol"] for e in pending if e["id"] != entry["id"]]
+    print(f"[breakout-watch] {today_str}: {entry['symbol']} won (strongest 1st candle, entry triggered at {current_price:.2f}) - {waiting} wait on its order", file=sys.stderr)
 
 
 def _breakout_watch_loop():
@@ -3233,9 +3390,11 @@ PIVOT_WATCH_TICK_SECONDS = 15
 PIVOT_AUTO_ORDER_ENABLED = True
 PIVOT_MAX_LOSS = BREAKOUT_MAX_LOSS
 # armed: the pick waiting on its entry, checked on every tick by
-# _pivot_live_check. ordered: today's trade was placed. stopped: the
-# breakout race took the day, so nothing more is sent.
-_PIVOT_DAY_DEFAULTS = {"slot": None, "breadth_sent": False, "picks": [], "sent": {}, "armed": None, "ordered": False, "stopped": False}
+# _pivot_live_check. ordered: today's trade was sent to the executor.
+# order_failed: picks whose order failed ({symbol: "HH:MM"}), skipped
+# for the next setup. stopped: the breakout race's order was placed, so
+# nothing more is sent.
+_PIVOT_DAY_DEFAULTS = {"slot": None, "breadth_sent": False, "picks": [], "sent": {}, "armed": None, "ordered": False, "order_failed": {}, "stopped": False}
 _pivot_watch_state = {"date": None, **_PIVOT_DAY_DEFAULTS}
 
 
@@ -3262,7 +3421,7 @@ def _start_pivot_watch_day(date_str):
             saved = json.load(fh)
     except (OSError, ValueError):
         saved = None
-    _pivot_watch_state.update({"date": date_str, **_PIVOT_DAY_DEFAULTS, "picks": [], "sent": {}})
+    _pivot_watch_state.update({"date": date_str, **_PIVOT_DAY_DEFAULTS, "picks": [], "sent": {}, "order_failed": {}})
     if saved and saved.get("date") == date_str:
         _pivot_watch_state.update(saved)
 
@@ -3330,7 +3489,7 @@ def _pivot_notify(title, body, symbols):
 
 
 def _pivot_watch_once(now):
-    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks())
+    df, breadth = pivot_pullback_mod.get_pivot_pullback_setups(locked_picks=_pivot_locked_picks(), order_failed=_pivot_order_failed())
     _pivot_watch_state["picks"] = breadth["picks"]
 
     if not df.empty:
@@ -3338,8 +3497,8 @@ def _pivot_watch_once(now):
         cache.get_or_fetch(_scanner_cache_key("pivot_pullback"), SCAN_CACHE_TTL_SECONDS, lambda: payload, force=True)
 
     state = _pivot_watch_state
-    taken = _day_trade_taken(state["date"])
-    if taken and taken["strategy"] != "pivot":
+    status, taken = _day_trade_status(state["date"])
+    if status == "placed" and taken["strategy"] != "pivot":
         _stop_pivot_for_day(taken)
     if state["stopped"]:
         _save_pivot_watch_state()
@@ -3387,6 +3546,8 @@ def _pivot_track_pick(row, oldest):
     if state["ordered"]:
         return
     symbol, status = row["Stock Name"], row["Status"]
+    if symbol in state["order_failed"]:
+        return  # its order failed - the next setup takes over
     # Only the day's pick ever shows Signal/Triggered — the rest are "Not picked".
     if status in ("Signal", "Triggered"):
         pick = {
@@ -3435,9 +3596,14 @@ def _pivot_live_check(now):
 def _pivot_take_trade(armed, price, when):
     state = _pivot_watch_state
     symbol, side = armed["symbol"], armed["side"]
-    if not _claim_day_trade(state["date"], "pivot", symbol):
-        _stop_pivot_for_day(_day_trade_taken(state["date"]))
-        _save_pivot_watch_state()
+    entry_id = f"pivot-{state['date']}-{symbol}"
+    if not _claim_day_trade(state["date"], "pivot", symbol, entry_id):
+        # The breakout race holds the day. Stop if its order went through;
+        # while it's still on its way, stay armed in case it fails.
+        status, taken = _day_trade_status(state["date"])
+        if status == "placed":
+            _stop_pivot_for_day(taken)
+            _save_pivot_watch_state()
         return
     state["ordered"], state["armed"] = True, None
 
@@ -3455,7 +3621,7 @@ def _pivot_take_trade(armed, price, when):
     if PIVOT_AUTO_ORDER_ENABLED:
         try:
             intent = order_intent_connector.create_intent(
-                entry_id=f"pivot-{state['date']}-{symbol}", symbol=symbol, security_id=armed["security_id"],
+                entry_id=entry_id, symbol=symbol, security_id=armed["security_id"],
                 side=side, entry_price=armed["entry"], sl_price=armed["sl"], target_price=armed["target"],
                 max_loss=PIVOT_MAX_LOSS, strategy="pivot",
             )
@@ -3465,13 +3631,14 @@ def _pivot_take_trade(armed, price, when):
         except Exception as exc:
             print(f"[pivot-watch] auto-order failed for {symbol}: {exc}", file=sys.stderr)
 
-    _stop_breakout_for_day(state["date"], {"strategy": "pivot", "symbol": symbol})
+    # The breakout race stops once this order is placed (_day_trade_status),
+    # not now - if it fails, the race can still take the day.
     _save_pivot_watch_state()
     print(f"[pivot-watch] {state['date']}: {symbol} {side} triggered at {when} - took today's trade", file=sys.stderr)
 
 
 def _stop_pivot_for_day(taken):
-    """The breakout race took today's trade: no more pivot alerts or
+    """The breakout race's order was placed: no more pivot alerts or
     orders. A pick already alerted as a setup gets one cancel notice, so
     nobody takes it by hand."""
     state = _pivot_watch_state
@@ -3514,6 +3681,180 @@ def _pivot_watch_loop():
 def _start_pivot_watch():
     if PIVOT_WATCH_ENABLED:
         threading.Thread(target=_pivot_watch_loop, daemon=True, name="pivot-watch").start()
+
+
+# ============================================================
+# OPENING BASE WATCH BOT (alerts only — no orders)
+#
+# The BSE-pattern scanner (opening_base_scanner.py) as live alerts:
+#   1. Once the 4-candle base is complete (09:35 + a short delay), one
+#      full F&O scan finds today's setups -> "Opening base" alert each,
+#      with its entry/SL, and the result is cached for the Scanners page.
+#   2. Every OPENING_BASE_TICK_SECONDS until the 10:00 cutoff, one live
+#      quote per waiting setup -> "Breakout" alert the moment price
+#      crosses the base high.
+#   3. Every 5 minutes, triggered stocks are re-checked on their 1-min
+#      candles -> one alert when the trade ends (target / SL / trail /
+#      time exit).
+# It never claims the day's one trade (_claim_day_trade) or sends an
+# order intent — it's on watch: +0.44R a trade over ~3 months of
+# backtest is promising, but should prove itself live before it gets
+# real money or a share of the day's one trade.
+# ============================================================
+
+OPENING_BASE_WATCH_ENABLED = True
+OPENING_BASE_SCAN_AT = datetime.time(9, 35, 40)
+OPENING_BASE_WATCH_END = datetime.time(15, 10)
+OPENING_BASE_TICK_SECONDS = 15
+OPENING_BASE_RECHECK_SECONDS = 300
+_OPENING_BASE_DONE = ("Target Hit", "SL Hit", "Trailed Out", "Time Exit", "Expired")
+
+_opening_base_state = {"date": None, "scanned": False, "setups": {}, "rechecked_at": 0}
+
+
+def _opening_base_state_path(date_str):
+    return os.path.join(AUTO_BREAKOUT_STATE_DIR, f"opening_base_state_{date_str}.json")
+
+
+def _save_opening_base_state():
+    state = _opening_base_state
+    path = _opening_base_state_path(state["date"])
+    try:
+        os.makedirs(AUTO_BREAKOUT_STATE_DIR, exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+        os.replace(path + ".tmp", path)
+    except OSError as exc:
+        print(f"[opening-base] couldn't save state: {exc}", file=sys.stderr)
+
+
+def _start_opening_base_day(date_str):
+    _opening_base_state.update(date=date_str, scanned=False, setups={}, rechecked_at=0)
+    try:
+        with open(_opening_base_state_path(date_str), encoding="utf-8") as fh:
+            saved = json.load(fh)
+    except (OSError, ValueError):
+        return
+    if saved.get("date") == date_str:
+        _opening_base_state.update(saved)
+
+
+def _opening_base_notify(title, body, symbols):
+    try:
+        _send_campaign_notification(
+            title, body, ALERT_MONITOR_AUDIENCE, entry_symbols=symbols,
+            channels=("in_app", "push") if fcm_connector.is_configured() else ("in_app",),
+            sent_by="opening-base-bot",
+        )
+    except Exception as exc:
+        print(f"[opening-base] notify failed ({title}): {exc}", file=sys.stderr)
+
+
+def _opening_base_alert(symbol, setup, row):
+    """Sends whatever this row's status newly reached, once each."""
+    sent = setup.setdefault("sent", [])
+    status = row["Status"]
+    r_text = f"{row['R']:+.2f}R" if row.get("R") is not None else ""
+    if "setup" not in sent and status in ("Waiting Breakout", "Triggered"):
+        sent.append("setup")
+        if status == "Waiting Breakout":
+            _opening_base_notify(
+                f"📐 Opening base — {symbol}",
+                f"{symbol} built a BSE-style opening base. Buy above {_fmt_price(row['Entry'])} until "
+                f"{opening_base_mod.ENTRY_CUTOFF}, SL {_fmt_price(row['SL'])} ({row['Risk %']}%), "
+                f"target {_fmt_price(row['Target'])} (1:{opening_base_mod.TARGET_R_MULTIPLE}). Alert only — no auto-order.",
+                [symbol],
+            )
+    if "triggered" not in sent and row.get("Trigger Time"):
+        sent.append("triggered")
+        _opening_base_notify(
+            f"🔔 Opening base breakout — {symbol}",
+            f"{symbol} broke its opening base at {row['Trigger Time']} — entry {_fmt_price(row['Entry'])}, "
+            f"SL {_fmt_price(row['SL'])}, target {_fmt_price(row['Target'])}. Trail SL up 0.5R per 0.5R move.",
+            [symbol],
+        )
+    if "done" not in sent and status in _OPENING_BASE_DONE and status != "Expired" and row.get("Trigger Time"):
+        sent.append("done")
+        _opening_base_notify(
+            f"{'🎯' if status == 'Target Hit' else '🏁'} Opening base {status.lower()} — {symbol}",
+            f"{symbol} {status.lower()} at {row.get('Exit Time')} ({_fmt_price(row.get('Exit Price'))}), {r_text}.",
+            [symbol],
+        )
+
+
+def _opening_base_cache(df, summary):
+    try:
+        payload = _opening_base_payload(df, summary)
+    except RuntimeError:
+        return
+    cache.get_or_fetch(_scanner_cache_key("opening_base"), SCAN_CACHE_TTL_SECONDS, lambda: payload, force=True)
+
+
+def _opening_base_scan(now):
+    df, summary = opening_base_mod.get_opening_base_setups()
+    state = _opening_base_state
+    state["scanned"], state["rechecked_at"] = True, time.time()
+    for row in df.astype(object).where(df.notna(), None).to_dict(orient="records"):
+        setup = state["setups"].setdefault(row["Stock Name"], {"security_id": int(row["Security ID"])})
+        setup.update(entry=row["Entry"], high=row["Base High"], status=row["Status"])
+        _opening_base_alert(row["Stock Name"], setup, row)
+    _opening_base_cache(df, summary)
+    _save_opening_base_state()
+    print(f"[opening-base] {now:%H:%M} scan: {len(df)} setups {sorted(state['setups'])}", file=sys.stderr)
+
+
+def _opening_base_recheck(now, live_only):
+    """live_only: one quote per waiting setup (fast, for the breakout
+    alert). Otherwise each unfinished setup's 1-min candles are re-run
+    through compute_signal for its full status (exits)."""
+    state = _opening_base_state
+    for symbol, setup in state["setups"].items():
+        if setup.get("status") in _OPENING_BASE_DONE:
+            continue
+        if live_only:
+            if setup.get("status") != "Waiting Breakout":
+                continue
+            ltp = dhan_connector.get_circuit_limits(setup["security_id"], max_attempts=1)[0]
+            if ltp is None or ltp <= setup["high"]:
+                continue
+        minutes = opening_base_mod._fetch_one(symbol, setup["security_id"], state["date"])
+        if minutes is None or minutes.empty:
+            continue
+        row = opening_base_mod.compute_signal(minutes, now)
+        if row is None:
+            continue
+        if live_only and not row.get("Trigger Time"):
+            # The 1-min candle with the cross hasn't closed yet — report the
+            # live cross now rather than up to a minute later.
+            row.update({"Status": "Triggered", "Trigger Time": now.strftime("%H:%M")})
+        setup["status"] = row["Status"]
+        _opening_base_alert(symbol, setup, row)
+    _save_opening_base_state()
+
+
+def _opening_base_watch_loop():
+    while True:
+        try:
+            now = datetime.datetime.now(chart_connector.IST)
+            if now.weekday() < 5 and OPENING_BASE_SCAN_AT <= now.time() <= OPENING_BASE_WATCH_END:
+                date_str = now.strftime("%Y-%m-%d")
+                if _opening_base_state["date"] != date_str:
+                    _start_opening_base_day(date_str)
+                if not _opening_base_state["scanned"]:
+                    _opening_base_scan(now)
+                elif now.strftime("%H:%M") < opening_base_mod.ENTRY_CUTOFF:
+                    _opening_base_recheck(now, live_only=True)
+                if time.time() - _opening_base_state["rechecked_at"] >= OPENING_BASE_RECHECK_SECONDS:
+                    _opening_base_state["rechecked_at"] = time.time()
+                    _opening_base_recheck(now, live_only=False)
+        except Exception as exc:
+            print(f"[opening-base] cycle failed: {exc}", file=sys.stderr)
+        time.sleep(OPENING_BASE_TICK_SECONDS)
+
+
+def _start_opening_base_watch():
+    if OPENING_BASE_WATCH_ENABLED:
+        threading.Thread(target=_opening_base_watch_loop, daemon=True, name="opening-base-watch").start()
 
 
 def _start_results_scanner_refresh():
@@ -3845,6 +4186,7 @@ if __name__ == "__main__":
     _start_alert_monitor()
     _start_breakout_watch()
     _start_pivot_watch()
+    _start_opening_base_watch()
     _start_mutual_funds_refresh()
     _start_results_scanner_refresh()
 

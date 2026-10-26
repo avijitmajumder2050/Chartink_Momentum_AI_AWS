@@ -294,17 +294,20 @@ STATUS_ORDER = [
 ]
 
 
-def pick_daily_trade(df, locked=()):
+def pick_daily_trade(df, locked=(), order_failed=None):
     """The day's one trade, chosen at signal time: earliest Signal Time,
     same candle -> highest "15m Value Cr". A pick Invalidated before entry
     hands over to the next setup that was still pending then (not yet
-    triggered or invalidated). `locked` = symbols already picked earlier
-    today, kept first in that order so a re-run (e.g. a stock missing from
-    an earlier fetch) can't swap a pick that was already alerted. Every
-    stock not picked becomes SKIPPED. -> (df, [picked symbols in order])."""
+    triggered or invalidated); so does a pick whose auto-order failed
+    (`order_failed` = {symbol: "HH:MM" it failed}). `locked` = symbols
+    already picked earlier today, kept first in that order so a re-run
+    (e.g. a stock missing from an earlier fetch) can't swap a pick that
+    was already alerted. Every stock not picked becomes SKIPPED.
+    -> (df, [picked symbols in order])."""
     if df.empty or "Signal Time" not in df:
         return df, []
     locked = list(locked)
+    order_failed = order_failed or {}
     sig = df[df["Signal Time"].notna()]
     if "Breadth OK" in df:
         # A setup whose signal candle closed with breadth against the
@@ -324,6 +327,9 @@ def pick_daily_trade(df, locked=()):
             if row["Status"] == "Invalidated" and row["Exit Time"] <= handover:
                 continue
         picks.append(i)
+        if row["Stock Name"] in order_failed:
+            handover = order_failed[row["Stock Name"]]
+            continue
         if row["Status"] != "Invalidated":
             break
         handover = row["Exit Time"]
@@ -332,7 +338,7 @@ def pick_daily_trade(df, locked=()):
     return df, [df.at[i, "Stock Name"] for i in picks]
 
 
-def get_pivot_pullback_setups(date_str=None, save=True, locked_picks=()):
+def get_pivot_pullback_setups(date_str=None, save=True, locked_picks=(), order_failed=None):
     """-> (DataFrame, breadth dict). Breadth (advances/declines at 09:30)
     picks BUY or SELL; the DataFrame holds every stock whose first 15
     minutes crossed the pivot on that side, each with its setup status."""
@@ -389,7 +395,7 @@ def get_pivot_pullback_setups(date_str=None, save=True, locked_picks=()):
             row["Signal Breadth"] = f"{adv} adv / {dec} dec"
             row["Breadth OK"] = (adv > dec) == (side == "BUY")
 
-    df, picks = pick_daily_trade(pd.DataFrame(rows), locked_picks)
+    df, picks = pick_daily_trade(pd.DataFrame(rows), locked_picks, order_failed)
     breadth["picks"] = picks
     if not df.empty:
         df["_order"] = df["Status"].map(STATUS_ORDER.index)
