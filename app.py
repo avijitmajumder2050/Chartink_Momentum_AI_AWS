@@ -440,7 +440,34 @@ def _pivot_pullback_payload(df, breadth):
     }
 
 
+_opening_base_full_scan = {"thread": None}
+
+
+def _opening_base_background_scan():
+    try:
+        df, summary = opening_base_mod.get_opening_base_setups()
+        _opening_base_cache(df, summary)
+    except Exception as exc:
+        print(f"[opening-base] background scan failed: {exc}", file=sys.stderr)
+
+
 def run_opening_base():
+    """A full F&O scan takes ~90s, past CloudFront's 60s timeout, so a
+    manual run never waits on one: before 09:35 there's nothing to scan,
+    and if today's base stocks aren't known yet (the watch bot's 09:35:40
+    scan didn't run, e.g. the backend started later) the full scan runs in
+    the background and the next Run picks up its result. Once known, a run
+    re-checks only those stocks - seconds."""
+    now = datetime.datetime.now(chart_connector.IST)
+    if not opening_base_mod.base_complete(now):
+        raise RuntimeError("The 4-candle opening base completes at 09:35 IST - run the scan after that.")
+    if opening_base_mod.needs_full_scan(now):
+        thread = _opening_base_full_scan["thread"]
+        if thread is None or not thread.is_alive():
+            thread = threading.Thread(target=_opening_base_background_scan, daemon=True, name="opening-base-full-scan")
+            _opening_base_full_scan["thread"] = thread
+            thread.start()
+        raise RuntimeError("Scanning all F&O stocks for today's opening bases in the background (about 90 seconds) - click Run Scan again in 2 minutes.")
     df, summary = opening_base_mod.get_opening_base_setups()
     return _opening_base_payload(df, summary)
 
@@ -3687,9 +3714,14 @@ def _start_pivot_watch():
 # OPENING BASE WATCH BOT (alerts only — no orders)
 #
 # The BSE-pattern scanner (opening_base_scanner.py) as live alerts:
-#   1. Once the 4-candle base is complete (09:35 + a short delay), one
-#      full F&O scan finds today's setups -> "Opening base" alert each,
-#      with its entry/SL, and the result is cached for the Scanners page.
+#   1. Once the 4-candle base is complete (09:35:05 - ahead of the pivot
+#      bot's 09:35:45 scan, so the two don't fight over Dhan's rate
+#      limit), one full F&O scan finds today's setups -> "Opening base"
+#      alert each, with its entry/SL, and the result is cached for the
+#      Scanners page. It's repeated every minute until the cutoff, which
+#      after the first is cheap (opening_base_mod only re-fetches the base
+#      stocks plus any not fetched yet), so a stock rate-limited or not
+#      yet complete on Dhan the first time is still caught.
 #   2. Every OPENING_BASE_TICK_SECONDS until the 10:00 cutoff, one live
 #      quote per waiting setup -> "Breakout" alert the moment price
 #      crosses the base high.
@@ -3703,13 +3735,14 @@ def _start_pivot_watch():
 # ============================================================
 
 OPENING_BASE_WATCH_ENABLED = True
-OPENING_BASE_SCAN_AT = datetime.time(9, 35, 40)
+OPENING_BASE_SCAN_AT = datetime.time(9, 35, 5)
+OPENING_BASE_RESCAN_SECONDS = 60
 OPENING_BASE_WATCH_END = datetime.time(15, 10)
 OPENING_BASE_TICK_SECONDS = 15
 OPENING_BASE_RECHECK_SECONDS = 300
 _OPENING_BASE_DONE = ("Target Hit", "SL Hit", "Trailed Out", "Time Exit", "Expired")
 
-_opening_base_state = {"date": None, "scanned": False, "setups": {}, "rechecked_at": 0}
+_opening_base_state = {"date": None, "scanned": False, "setups": {}, "rechecked_at": 0, "scanned_at": 0}
 
 
 def _opening_base_state_path(date_str):
@@ -3729,7 +3762,7 @@ def _save_opening_base_state():
 
 
 def _start_opening_base_day(date_str):
-    _opening_base_state.update(date=date_str, scanned=False, setups={}, rechecked_at=0)
+    _opening_base_state.update(date=date_str, scanned=False, setups={}, rechecked_at=0, scanned_at=0)
     try:
         with open(_opening_base_state_path(date_str), encoding="utf-8") as fh:
             saved = json.load(fh)
@@ -3793,7 +3826,7 @@ def _opening_base_cache(df, summary):
 def _opening_base_scan(now):
     df, summary = opening_base_mod.get_opening_base_setups()
     state = _opening_base_state
-    state["scanned"], state["rechecked_at"] = True, time.time()
+    state["scanned"], state["rechecked_at"], state["scanned_at"] = True, time.time(), time.time()
     for row in df.astype(object).where(df.notna(), None).to_dict(orient="records"):
         setup = state["setups"].setdefault(row["Stock Name"], {"security_id": int(row["Security ID"])})
         setup.update(entry=row["Entry"], high=row["Base High"], status=row["Status"])
@@ -3840,9 +3873,12 @@ def _opening_base_watch_loop():
                 date_str = now.strftime("%Y-%m-%d")
                 if _opening_base_state["date"] != date_str:
                     _start_opening_base_day(date_str)
-                if not _opening_base_state["scanned"]:
+                before_cutoff = now.strftime("%H:%M") < opening_base_mod.ENTRY_CUTOFF
+                if not _opening_base_state["scanned"] or (
+                    before_cutoff and time.time() - _opening_base_state["scanned_at"] >= OPENING_BASE_RESCAN_SECONDS
+                ):
                     _opening_base_scan(now)
-                elif now.strftime("%H:%M") < opening_base_mod.ENTRY_CUTOFF:
+                elif before_cutoff:
                     _opening_base_recheck(now, live_only=True)
                 if time.time() - _opening_base_state["rechecked_at"] >= OPENING_BASE_RECHECK_SECONDS:
                     _opening_base_state["rechecked_at"] = time.time()

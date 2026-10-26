@@ -33,13 +33,18 @@ no trail the unfiltered one-a-day trades were -4.8R over the last 30 days.
 
 One Dhan intraday call per stock for today's 1-min candles (the backtest
 used 1-min too, so live statuses match it), throttled like the pivot
-scanner — the endpoint is rate-limited (DH-904).
+scanner — the endpoint is rate-limited (DH-904). That makes a full scan
+~90s, past CloudFront's 60s origin timeout, so it runs once a day: the
+base is final at 09:35, so after one full scan the day's base stocks are
+remembered (_day) and every later run re-fetches only those (plus any
+whose fetch failed) — a few seconds.
 """
 
 import argparse
 import io
 import logging
 import math
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -70,6 +75,11 @@ TRAIL_R = 0.5
 MAX_WORKERS = 3
 SUBMIT_STAGGER_SECONDS = 0.4
 RETRY_PASS_DELAY_SECONDS = 2
+
+# The day's full-scan memory: which stocks were checked once the base was
+# complete, and which of them formed it ({symbol: security id}).
+_day = {"date": None, "checked": set(), "bases": {}}
+_day_lock = threading.Lock()
 
 STATUS_ORDER = ["Triggered", "Waiting Breakout", "Target Hit", "Trailed Out", "Time Exit", "SL Hit", "Expired"]
 
@@ -186,14 +196,35 @@ def pick_daily_trade(df):
     return trig.sort_values(["Trigger Time", "C1 Value Cr"], ascending=[True, False]).iloc[0]["Stock Name"]
 
 
+def base_complete(now=None):
+    """True once today's 09:34 minute has closed, so the base is final."""
+    return (now or datetime.now(IST)).strftime("%H:%M") >= BASE_END
+
+
+def needs_full_scan(now=None):
+    """True if today's base stocks aren't known yet (no full scan since
+    the base completed) — the next scan would take ~90s."""
+    now = now or datetime.now(IST)
+    with _day_lock:
+        return _day["date"] != now.strftime("%Y-%m-%d") or not _day["checked"]
+
+
 def get_opening_base_setups(date_str=None, save=True):
     """-> (DataFrame of every stock that formed the base today, summary)."""
     now = datetime.now(IST)
     is_today = date_str is None or date_str == now.strftime("%Y-%m-%d")
     date_str = date_str or now.strftime("%Y-%m-%d")
     cutoff = now if is_today else None
-    universe = load_universe()
-    logger.info("Opening base scan %s | %s stocks", date_str, len(universe))
+    full_universe = load_universe()
+    remember = is_today and base_complete(now)
+    universe = full_universe
+    if remember:
+        with _day_lock:
+            if _day["date"] != date_str:
+                _day.update(date=date_str, checked=set(), bases={})
+            if _day["checked"]:
+                universe = [(s, sid) for s, sid in full_universe if s in _day["bases"] or s not in _day["checked"]]
+    logger.info("Opening base scan %s | %s of %s stocks", date_str, len(universe), len(full_universe))
 
     candles = {}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -209,16 +240,23 @@ def get_opening_base_setups(date_str=None, save=True):
         if (fetched := _fetch_one(symbol, sid, date_str)) is not None:
             candles[(symbol, sid)] = fetched
 
-    rows = []
+    rows, complete = [], set()
     for (symbol, sid), minutes in candles.items():
         if minutes.empty:
             continue
         day = minutes[minutes["time"].dt.strftime("%Y-%m-%d") == date_str].reset_index(drop=True)
+        if (day["time"].dt.strftime("%H:%M") == "09:34").any():
+            complete.add(symbol)  # Dhan's data can lag - only a full base is a final answer
         if not day.empty and (result := compute_signal(day, cutoff)) is not None:
             rows.append({"Stock Name": symbol, "Security ID": sid, **result})
+    if remember:
+        with _day_lock:
+            if _day["date"] == date_str:
+                _day["checked"] |= complete
+                _day["bases"].update({r["Stock Name"]: r["Security ID"] for r in rows})
 
     df = pd.DataFrame(rows)
-    summary = {"scanned": len(candles), "universe": len(universe), "pick": None}
+    summary = {"scanned": len(_day["checked"]) if remember else len(candles), "universe": len(full_universe), "pick": None}
     if not df.empty:
         summary["pick"] = pick_daily_trade(df)
         df["_order"] = df["Status"].map(STATUS_ORDER.index)
